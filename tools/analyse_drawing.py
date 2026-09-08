@@ -1,26 +1,32 @@
 #!/usr/bin/env python3
 import argparse
 import base64
+import io
 import json
-import mimetypes
 import os
 from pathlib import Path
 
 from openai import OpenAI
+from PIL import Image, ImageEnhance, ImageOps
 
-PROMPT = """You are analysing a simple 2D fabrication drawing for a Quick DXF workflow.
+PROMPT = """You are analysing a simple 2D fabrication drawing for a Quick DXF workflow used at a trade counter or on site.
+
+Read the drawing carefully, including handwritten figured dimensions. The operator and customer will verify your proposal before any DXF is generated.
 
 Rules:
-- Read only dimensions that are explicitly written or unambiguously indicated.
-- Never invent a production dimension from apparent image scale.
+- Read only dimensions explicitly written or unambiguously indicated. Never invent a production dimension from visual scale.
+- Extract every legible fabrication dimension even if some other dimensions are unclear.
 - Distinguish overall/size dimensions from positional dimensions.
-- For cut-out or hole positions, identify whether the dimension terminates at the feature centre/centreline or at an edge. If unclear, use unknown.
+- For cut-out or hole positions, identify whether a dimension terminates at the feature centre/centreline or at an edge. If unclear, use unknown.
 - If a positional dimension is measured from an outer edge, identify which outer edge when clear.
-- Treat a centre mark or C/CL-style centre indicator as centre-referenced only when visually supported.
+- Treat a centre mark, crossed-centre symbol, C/CL notation, or dimension line to a feature centre as centre-referenced only when visually supported.
+- A dimension line terminating at a drawn feature boundary is edge-referenced.
+- A dashed box may be a reference/clearance area rather than the physical cut-out. Do not substitute it for a solid cut boundary unless clearly labelled as the cut.
 - If the source contains several unrelated parts/drawings, mark single_part false and require human review.
-- The result is only a proposal for human confirmation; production_ready must be false whenever any required dimension, position, feature type, or reference is uncertain.
+- production_ready must be false whenever any required dimension, position, feature type, or reference is uncertain.
 - Use millimetres when the drawing explicitly uses mm. Do not silently convert unknown units.
 - Focus on geometry needed to make one simple flat 2D DXF: outer profile, holes, slots, notches and cut-outs. Ignore decorative notes unless they alter geometry.
+- Preserve ambiguous handwritten values in raw_text and lower confidence rather than guessing.
 """
 
 SCHEMA = {
@@ -31,8 +37,7 @@ SCHEMA = {
         "units": {"type": "string", "enum": ["mm", "inch", "unknown"]},
         "drawing_label": {"type": ["string", "null"]},
         "profile": {
-            "type": "object",
-            "additionalProperties": False,
+            "type": "object", "additionalProperties": False,
             "properties": {
                 "type": {"type": "string", "enum": ["rectangle", "circle", "polygon", "irregular", "unknown"]},
                 "width_mm": {"type": ["number", "null"]},
@@ -45,8 +50,7 @@ SCHEMA = {
         "features": {
             "type": "array",
             "items": {
-                "type": "object",
-                "additionalProperties": False,
+                "type": "object", "additionalProperties": False,
                 "properties": {
                     "id": {"type": "string"},
                     "type": {"type": "string", "enum": ["rectangular_cutout", "circular_hole", "slot", "notch", "arc", "other"]},
@@ -70,8 +74,7 @@ SCHEMA = {
         "dimensions": {
             "type": "array",
             "items": {
-                "type": "object",
-                "additionalProperties": False,
+                "type": "object", "additionalProperties": False,
                 "properties": {
                     "raw_text": {"type": "string"},
                     "value": {"type": ["number", "null"]},
@@ -99,10 +102,39 @@ PRICING_USD_PER_MILLION = {
 }
 
 
+def prepare_image(path: Path):
+    """Normalise phone/sketch images before vision analysis without inventing geometry."""
+    with Image.open(path) as source:
+        source = ImageOps.exif_transpose(source).convert("RGB")
+        original_size = list(source.size)
+        max_side = max(source.size)
+        if max_side < 1800:
+            factor = 1800 / max_side
+            source = source.resize(
+                (round(source.width * factor), round(source.height * factor)),
+                Image.Resampling.LANCZOS,
+            )
+        source = ImageOps.autocontrast(source, cutoff=0.5)
+        source = ImageEnhance.Sharpness(source).enhance(1.6)
+        buf = io.BytesIO()
+        source.save(buf, format="JPEG", quality=94, optimize=True)
+        data = buf.getvalue()
+        return data, {
+            "original_pixels": original_size,
+            "submitted_pixels": list(source.size),
+            "source_bytes": path.stat().st_size,
+            "submitted_bytes": len(data),
+        }
+
+
 def encode_image(path: Path):
-    mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
-    data = base64.b64encode(path.read_bytes()).decode("ascii")
-    return {"type": "input_image", "image_url": f"data:{mime};base64,{data}", "detail": "high"}
+    data, metadata = prepare_image(path)
+    encoded = base64.b64encode(data).decode("ascii")
+    return {
+        "type": "input_image",
+        "image_url": f"data:image/jpeg;base64,{encoded}",
+        "detail": "high",
+    }, metadata
 
 
 def estimate_cost(model, usage):
@@ -129,6 +161,7 @@ def main():
 
     client = OpenAI(max_retries=0, timeout=120.0)
     uploaded_file = None
+    preprocessing = None
     suffix = args.drawing.suffix.lower()
 
     try:
@@ -139,8 +172,9 @@ def main():
                 expires_after={"anchor": "created_at", "seconds": 3600},
             )
             source_part = {"type": "input_file", "file_id": uploaded_file.id}
+            preprocessing = {"source_bytes": args.drawing.stat().st_size, "mode": "pdf-direct"}
         elif suffix in {".png", ".jpg", ".jpeg", ".webp"}:
-            source_part = encode_image(args.drawing)
+            source_part, preprocessing = encode_image(args.drawing)
         else:
             raise SystemExit("Supported test inputs: PDF, PNG, JPG, JPEG, WebP")
 
@@ -172,6 +206,7 @@ def main():
             "input_file": args.drawing.as_posix(),
             "model": args.model,
             "reasoning_effort": args.effort,
+            "preprocessing": preprocessing,
             "response_id": response.id,
             "usage": {
                 "input_tokens": getattr(usage, "input_tokens", None),
@@ -179,7 +214,7 @@ def main():
                 "total_tokens": getattr(usage, "total_tokens", None),
             },
             "estimated_cost_usd": estimate_cost(args.model, usage),
-            "pricing_note": "Estimate uses OpenAI API token rates current on 2026-09-08; verify before commercial pricing.",
+            "pricing_note": "Estimate uses configured model token rates; verify current API pricing before commercial launch.",
             "extraction": extraction,
         }
 

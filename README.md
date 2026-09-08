@@ -1,54 +1,72 @@
 # Sapiver Draw DXF
 
-Prototype for **Quick DXF**: a trade-counter/site workflow for turning a simple customer sketch, photo or PDF into a checked 2D DXF.
+Prototype for **Quick DXF**: a trade-counter/site workflow for turning simple customer sketches, photos and PDFs into checked production DXFs with a signed confirmation record.
 
-## Product direction
+## Current v1 flow
 
-1. Shop assistant takes a photo or opens a customer image/PDF.
-2. AI proposes the simple fabrication geometry and reads figured dimensions.
-3. Assistant/customer reviews only the proposed values, including whether positional dimensions are measured to a **centre** or an **edge**.
-4. Customer confirms the interpreted drawing.
-5. Deterministic code generates the DXF from the confirmed data.
-6. If manufacture is ordered, DXF preparation is included and the job can be retained for repeat work. If the customer wants the DXF file exported, the proposed counter price is £5 for one drawing or £10 for multiple drawings in the same job.
+1. Create/search a shared job.
+2. Add one or multiple source images/PDFs.
+3. GPT-5.6 Sol proposes parts, features and figured dimensions.
+4. Assistant/customer confirms every production dimension, including centre/edge intent and the outer edge used for positional dimensions.
+5. Deterministic code reconstructs clean geometry from the confirmed dimension IDs; AI numeric geometry is not authoritative.
+6. Generate a clean confirmation PDF from that same deterministic geometry.
+7. Print, obtain the customer signature, then photograph the signed confirmation back into the job.
+8. Release generates the DXF file(s), locks the revision and prepares the production/customer export pack.
+9. Confirm & email the pack. The job is marked Sent only after successful email.
+10. The work server remains the permanent production archive.
 
-The AI interprets the source; it does not have final authority over production geometry.
+Customer DXF export pricing currently shown in the prototype: **£5 single drawing / £10 multiple drawings in the same job**.
 
-## Current browser prototype
+## Shared multi-device storage
 
-- Opens PNG, JPG, WebP and the first page of a PDF.
-- Supports dimension review with explicit **size / centre / edge** reference types.
-- Editing a confirmed dimension invalidates its confirmation until it is re-approved.
-- Manual tracing remains available as a fallback while automatic interpretation is being tested.
-- Exports millimetre DXF closed `LWPOLYLINE` geometry on the `CUT` layer.
-- `core/dxf.js` is isolated for later reuse in Expo.
+The prototype includes Netlify Functions backed by strongly consistent Netlify Blobs for shared in-progress jobs and files. Revisions are stored separately from the current job head so signed revisions remain immutable and retrievable. Browser localStorage is only an emergency unsynced cache, not the primary record.
 
-## Controlled AI benchmark
+Stored in-progress data includes job metadata, source drawings, AI proposals, confirmed dimensions, confirmation PDF, signed-photo proof, DXF references and send state.
 
-The repository contains a deliberately controlled GitHub Actions test harness:
+## Deterministic geometry support
 
-- `tools/analyse_drawing.py` sends one drawing to the OpenAI Responses API and requests strict structured geometry/dimension JSON.
-- `.github/workflows/analyse-drawing.yml` runs only when a supported drawing is pushed under `run-tests/` on branch `prototype-v1`.
-- It uses repository secret `QUICK_DXF_API`.
-- Automatic OpenAI retries are disabled so one trigger does not silently cause repeated model calls.
-- The default benchmark model is `gpt-5.6-terra` with low reasoning effort.
-- The response uses `store: false`.
-- Temporary PDF uploads are deleted after analysis where possible.
-- The result artifact contains extracted geometry, uncertainties, token usage and estimated API cost.
+The current v1 engine supports:
 
-See `run-tests/README.md` before uploading a test drawing. Uploading a supported drawing there deliberately incurs an API call.
+- rectangular outer profiles
+- circular outer profiles
+- rectangular cut-outs
+- circular holes
+- slots
+- centre-referenced feature positions
+- edge-referenced feature positions from left/right/top/bottom
+- DXF `LWPOLYLINE` and `CIRCLE` output in millimetres
 
-## Safety rules
+The engine deliberately blocks release for geometry it does not yet implement safely, including notches, arbitrary polygons/irregular profiles, repeated unlocated features and general arcs/radii. Those should be added only with deterministic rules and tests rather than guessed from the image.
 
-- Figured dimensions are authoritative; never infer a production dimension from apparent image scale.
-- Centre/edge positional intent must be confirmed where applicable.
-- AI output is a proposal for human confirmation, not a manufacturing instruction.
-- A DXF should not be treated as production-ready while required dimensions or geometric relationships remain unresolved.
+## AI architecture
 
-## Architecture direction
+- Browser uploads the source to shared temporary storage.
+- A server-side function calls the OpenAI Responses API using `gpt-5.6-sol`.
+- Structured output gives every figured dimension a stable ID.
+- Every outer-profile size and feature size/position must link to the exact figured dimension ID that supports it.
+- The deterministic engine ignores AI numeric geometry values when creating production geometry and uses the human-confirmed linked dimensions instead.
+- Model confidence never auto-approves a production value.
 
-- browser/Expo UI — capture and human verification
-- vision/API layer — proposes geometry and dimensions
-- structured job model — confirmed values and customer intent
-- deterministic geometry/DXF engine — final file creation
+The repository still includes the earlier controlled GitHub Actions benchmark under `run-tests/` for comparing recognition on representative drawings.
 
-Netlify deployment is intentionally separate from GitHub development and must not be triggered without explicit approval.
+## Confirmation and release
+
+The confirmation PDF is generated from the same deterministic geometry later used for DXF output, reducing the risk of the signed drawing and manufacturing file disagreeing.
+
+Signed/locked revisions cannot be mutated through the shared job/file endpoints. Creating a later change advances to the next revision rather than overwriting the signed one.
+
+The email release function expects server environment configuration for the production sender/recipient and Brevo. These values are intentionally not committed to GitHub.
+
+## Tests
+
+`.github/workflows/geometry-tests.yml` runs no-cost prototype checks on `prototype-v1`:
+
+- JavaScript syntax checks across browser, core and Netlify Functions
+- deterministic geometry tests
+- centre/edge coordinate behaviour
+- millimetre DXF output checks
+- safety blocking for unresolved/unsupported geometry
+
+## Deployment rule
+
+**Netlify deployment is intentionally separate from GitHub development and must not be triggered without explicit approval.**

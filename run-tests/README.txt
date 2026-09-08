@@ -1,0 +1,1 @@
+Binary test drawings are added separately. This folder intentionally triggers the Quick DXF AI benchmark when a supported image/PDF is committed on prototype-v1.

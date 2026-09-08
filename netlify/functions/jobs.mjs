@@ -3,18 +3,14 @@ import { assertRevisionTransition, jobHeadKey, jobRevisionKey, json, safeId, sto
 async function listJobs(s, query) {
   const q = String(query || '').trim().toLowerCase();
   const items = [];
-  let cursor;
-  do {
-    const page = await s.list({ prefix: 'heads/', cursor });
-    for (const blob of page.blobs || []) {
-      const head = await s.get(blob.key, { type: 'json' });
-      if (!head) continue;
-      const item = summary(head);
-      const haystack = `${item.jobRef} ${item.customerName} ${item.date} ${item.status}`.toLowerCase();
-      if (!q || haystack.includes(q)) items.push(item);
-    }
-    cursor = page.next_cursor || page.nextCursor || null;
-  } while (cursor);
+  const page = await s.list({ prefix: 'heads/' });
+  for (const blob of page.blobs || []) {
+    const head = await s.get(blob.key, { type: 'json' });
+    if (!head) continue;
+    const item = summary(head);
+    const haystack = `${item.jobRef} ${item.customerName} ${item.date} ${item.status}`.toLowerCase();
+    if (!q || haystack.includes(q)) items.push(item);
+  }
   items.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
   return items.slice(0, 100);
 }

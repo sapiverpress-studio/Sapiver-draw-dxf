@@ -1,4 +1,4 @@
-name: Quick DXF geometry tests
+name: Quick DXF prototype checks
 
 on:
   push:
@@ -7,6 +7,8 @@ on:
     paths:
       - 'core/**'
       - 'tests/**'
+      - 'app-v4.js'
+      - 'netlify/functions/**'
       - '.github/workflows/geometry-tests.yml'
   workflow_dispatch:
 
@@ -24,5 +26,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Check JavaScript syntax
+        run: |
+          node --check app-v4.js
+          node --check core/dxf.js
+          node --check core/geometry.js
+          node --check core/confirmation-pdf.js
+          for file in netlify/functions/*.mjs; do node --check "$file"; done
       - name: Run deterministic geometry tests
         run: node tests/geometry.test.mjs

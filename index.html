@@ -8,30 +8,45 @@
   <meta name="description" content="Trade-counter drawing confirmation and DXF workflow.">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./job.css">
+  <link rel="stylesheet" href="./job-v4.css">
 </head>
 <body>
-  <header class="topbar no-print">
+  <header class="topbar">
     <div>
       <div class="brand">Quick DXF</div>
-      <div class="subbrand">Capture → confirm → sign → production</div>
+      <div class="subbrand">Capture → AI proposal → confirm → sign → production</div>
     </div>
-    <span id="revisionBadge" class="badge">Revision 1 · Draft</span>
+    <div class="top-status">
+      <span id="storageBadge" class="badge neutral">Shared storage: checking</span>
+      <span id="revisionBadge" class="badge">Revision 1 · Draft</span>
+    </div>
   </header>
 
-  <main class="job-shell no-print">
+  <main class="job-shell">
     <section class="panel job-panel">
       <div class="section-head">
-        <div>
-          <p class="eyebrow">1 · Job</p>
-          <h1>Job details</h1>
+        <div><p class="eyebrow">1 · Job</p><h1>Job details</h1></div>
+        <div class="section-actions">
+          <button id="newJobBtn" class="button quiet" type="button">New job</button>
+          <button id="newRevisionBtn" class="button quiet" type="button" hidden>New revision</button>
+          <button id="saveJobBtn" class="button" type="button">Save now</button>
         </div>
       </div>
 
       <div class="job-grid">
         <label>Job reference<input id="jobRef" type="text" placeholder="e.g. 18437"></label>
         <label>Customer name<input id="customerName" type="text" placeholder="Customer / company"></label>
+        <label>Customer email<input id="customerEmail" type="email" inputmode="email" placeholder="For DXF export"></label>
         <label>Staff member<input id="staffName" type="text" placeholder="Assistant"></label>
         <label>Date<input id="jobDate" type="date"></label>
+      </div>
+      <div class="shared-jobs">
+        <div class="shared-search">
+          <input id="jobSearch" type="search" placeholder="Search saved jobs by reference or customer">
+          <button id="refreshJobsBtn" class="button quiet" type="button">Refresh</button>
+        </div>
+        <div id="jobResults" class="job-results"></div>
+        <p id="saveState" class="small muted">Not yet saved to shared storage.</p>
       </div>
     </section>
 
@@ -40,16 +55,14 @@
         <div>
           <p class="eyebrow">2 · Source drawings</p>
           <h1>Images and PDFs</h1>
-          <p class="helper">One job can contain multiple drawings, detail photos or PDF pages. Every included source is frozen when the revision is approved.</p>
+          <p class="helper">One job can contain multiple drawings. Source files are shared between devices while the job is in progress.</p>
         </div>
         <span id="sourceCount" class="counter">0 drawings</span>
       </div>
-
       <div class="capture-row">
         <label class="button primary file-button">Take photo<input id="cameraInput" type="file" accept="image/*" capture="environment" hidden></label>
         <label class="button file-button">Add images / PDF<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" multiple hidden></label>
       </div>
-
       <div id="sourceStrip" class="source-strip" aria-label="Job drawings"></div>
       <div id="sourceEmpty" class="source-empty">No drawings added to this job.</div>
     </section>
@@ -59,21 +72,36 @@
         <div>
           <p class="eyebrow">3 · Confirm</p>
           <h1 id="activeSourceTitle">Select a drawing</h1>
-          <p id="activeSourceMeta" class="helper">AI will propose geometry and dimensions. Every production dimension must be confirmed by the assistant/customer.</p>
+          <p id="activeSourceMeta" class="helper">AI proposes the values; every production dimension is then deliberately confirmed by the assistant/customer.</p>
         </div>
         <span id="reviewProgress" class="counter">0 / 0 confirmed</span>
       </div>
 
       <div class="review-layout">
-        <div class="drawing-preview-wrap">
-          <img id="drawingPreview" alt="Selected source drawing" hidden>
-          <div id="drawingPlaceholder" class="drawing-placeholder">Select or add a drawing</div>
+        <div class="preview-stack">
+          <div>
+            <p class="preview-label">Source drawing</p>
+            <div class="drawing-preview-wrap">
+              <img id="drawingPreview" alt="Selected source drawing" hidden>
+              <div id="drawingPlaceholder" class="drawing-placeholder">Select or add a drawing</div>
+            </div>
+          </div>
+          <div>
+            <p class="preview-label">Clean confirmed geometry</p>
+            <div class="drawing-preview-wrap geometry-preview-wrap">
+              <img id="geometryPreview" alt="Confirmed deterministic geometry" hidden>
+              <div id="geometryPlaceholder" class="drawing-placeholder">Confirm dimensions to build geometry</div>
+            </div>
+            <div id="geometryState" class="ai-state geometry-state">Clean geometry will appear after confirmation.</div>
+          </div>
         </div>
-
         <div class="dimension-side">
-          <div id="aiState" class="ai-state">Awaiting analysis</div>
+          <div class="analysis-row">
+            <div id="aiState" class="ai-state">Awaiting analysis</div>
+            <button id="analyseBtn" class="button" type="button" disabled>Analyse again</button>
+          </div>
           <div id="dimensionList" class="dimension-list"></div>
-          <div id="dimensionEmpty" class="dimension-empty">No proposed dimensions yet. The production backend will populate these from the AI analysis.</div>
+          <div id="dimensionEmpty" class="dimension-empty">No proposed dimensions yet.</div>
           <button id="addCorrectionBtn" class="button quiet full" type="button" disabled>Add / correct dimension</button>
         </div>
       </div>
@@ -83,43 +111,30 @@
       <div class="section-head">
         <div>
           <p class="eyebrow">4 · Customer confirmation</p>
-          <h1>Confirmation pack</h1>
-          <p class="helper">Single-drawing jobs are designed to fit clearly on one sheet. Multi-drawing jobs generate a cover approval page plus drawing pages as needed so detail is not shrunk into unreadable thumbnails.</p>
+          <h1>Confirmation PDF and signed proof</h1>
+          <p class="helper">Create the confirmation PDF after every drawing dimension is confirmed. Print it, obtain the customer's signature, then photograph the signed sheet back into this job.</p>
         </div>
       </div>
-
       <div class="approval-actions">
-        <button id="printBtn" class="button primary" type="button" disabled>Print / Save confirmation PDF</button>
+        <button id="pdfBtn" class="button primary" type="button" disabled>Create / open confirmation PDF</button>
         <label class="button file-button">Photograph signed confirmation<input id="signedInput" type="file" accept="image/*" capture="environment" hidden></label>
       </div>
-
+      <div id="pdfState" class="signed-state">No confirmation PDF created for this revision.</div>
       <div id="signedState" class="signed-state">No signed confirmation attached.</div>
-      <label class="confirmation-check"><input id="customerConfirmed" type="checkbox"> Customer has checked the clean drawing(s), dimensions and feature positions and confirms they are correct for manufacture.</label>
+      <label class="confirmation-check"><input id="customerConfirmed" type="checkbox"> Customer has checked the drawing(s), dimensions and feature positions and confirms they are correct for manufacture.</label>
     </section>
 
     <section class="panel release-panel">
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">5 · Release</p>
-          <h1>Production or export</h1>
-        </div>
-      </div>
-
+      <div class="section-head"><div><p class="eyebrow">5 · Release</p><h1>Production or customer DXF</h1></div></div>
       <div class="release-grid">
-        <button id="productionBtn" class="release-choice" type="button" disabled>
-          <strong>Manufacture with us</strong>
-          <span>DXF preparation included and retained against the job.</span>
-        </button>
-        <button id="exportChoiceBtn" class="release-choice" type="button" disabled>
-          <strong>Customer DXF export</strong>
-          <span>£5 single drawing · £10 multi-drawing same job.</span>
-        </button>
+        <button id="productionBtn" class="release-choice" type="button" disabled><strong>Approve for manufacture</strong><span>Generate DXF files, lock the signed revision and prepare the production pack.</span></button>
+        <button id="exportChoiceBtn" class="release-choice" type="button" disabled><strong>Approve customer DXF export</strong><span>£5 single drawing · £10 multi-drawing same job.</span></button>
       </div>
+      <div id="dxfState" class="signed-state">DXF files are generated only when the signed revision is released.</div>
+      <button id="sendBtn" class="button primary full send-button" type="button" hidden disabled>Confirm & email</button>
       <p id="releaseMessage" class="helper release-message">Add drawings and complete confirmation before release.</p>
     </section>
   </main>
-
-  <section id="printPack" class="print-pack" aria-hidden="true"></section>
 
   <template id="dimensionTemplate">
     <article class="dimension-row">
@@ -134,15 +149,21 @@
           <option value="edge">Edge</option>
           <option value="unknown">Unknown</option>
         </select>
+        <select class="dimension-from-edge" aria-label="Measured from outer edge">
+          <option value="unknown">From edge: not applicable / unknown</option>
+          <option value="left">From left</option>
+          <option value="right">From right</option>
+          <option value="top">From top</option>
+          <option value="bottom">From bottom</option>
+        </select>
         <button class="dimension-confirm button" type="button">Confirm</button>
       </div>
     </article>
   </template>
 
-  <footer class="no-print">
-    Production rule: AI proposes. The assistant/customer confirms every production dimension. A signed, locked revision is immutable; later changes create a new revision.
+  <footer>
+    Production rule: AI proposes. A human confirms every production dimension. Signed revisions are immutable. Sent jobs are permanently archived on the work server, not in this app.
   </footer>
-
-  <script type="module" src="./app-v3.js"></script>
+  <script type="module" src="./app-v4.js"></script>
 </body>
 </html>

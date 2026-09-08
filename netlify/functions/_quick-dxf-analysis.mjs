@@ -4,18 +4,24 @@ The operator and customer will verify every production dimension before any DXF 
 Rules:
 - Read only dimensions explicitly written or unambiguously indicated. Never invent a production dimension from visual scale.
 - Extract every legible fabrication dimension even when other dimensions are unclear.
+- Give every extracted figured dimension a stable short id such as d1, d2, d3.
+- Group dimensions and features into separate parts/details whenever the source contains more than one physical item.
+- For each outer-profile size and every feature size/position, link the geometry parameter to the exact figured dimension id that supports it. If no figured dimension supports it, set that dimension-id field to null rather than inferring from scale.
 - Distinguish overall/size dimensions from positional dimensions.
 - For cut-outs or holes, identify whether each position dimension terminates at the feature centre/centreline or at an edge. If unclear, use unknown.
 - If a position is measured from an outer edge, identify left/right/top/bottom when clear.
 - A centre mark, CL symbol, crossed-centre symbol or dimension line terminating at a feature centre supports centre reference.
 - A dimension line terminating at a drawn feature boundary supports edge reference.
 - Dashed boxes may be reference/clearance areas. Do not silently treat them as physical cut boundaries.
-- A source may contain several separate parts/details. Group dimensions and features by part whenever possible.
 - production_ready must be false whenever any required dimension, position, feature type or reference is uncertain.
 - Use millimetres only when supported by the drawing/context. Do not silently convert unknown units.
 - Focus on simple flat 2D geometry: outer profiles, holes, slots, notches, rectangular cut-outs and simple arcs/radii.
 - Preserve ambiguous handwritten values in raw_text and lower confidence rather than guessing.
-- Model confidence is advisory only. Human confirmation is mandatory for every production dimension.`;
+- Model confidence is advisory only. Human confirmation is mandatory for every production dimension.
+
+Important geometry-linking rule: numeric geometry values are proposals only. The final deterministic DXF engine will ignore those numeric values and use the human-confirmed dimension referenced by each *_dimension_id field.`;
+
+const nullableDimensionId = { type: ['string', 'null'] };
 
 const dimension = {
   type: 'object', additionalProperties: false,
@@ -48,10 +54,22 @@ const feature = {
     y_mm: { type: ['number', 'null'] },
     y_reference: { type: 'string', enum: ['centre', 'edge', 'unknown'] },
     y_from_edge: { type: 'string', enum: ['left', 'right', 'top', 'bottom', 'unknown'] },
+    touching_edge: { type: 'string', enum: ['left', 'right', 'top', 'bottom', 'none', 'unknown'] },
+    width_dimension_id: nullableDimensionId,
+    height_dimension_id: nullableDimensionId,
+    diameter_dimension_id: nullableDimensionId,
+    radius_dimension_id: nullableDimensionId,
+    x_dimension_id: nullableDimensionId,
+    y_dimension_id: nullableDimensionId,
     confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
     source_note: { type: ['string', 'null'] },
   },
-  required: ['id', 'type', 'quantity', 'width_mm', 'height_mm', 'diameter_mm', 'radius_mm', 'x_mm', 'x_reference', 'x_from_edge', 'y_mm', 'y_reference', 'y_from_edge', 'confidence', 'source_note'],
+  required: [
+    'id', 'type', 'quantity', 'width_mm', 'height_mm', 'diameter_mm', 'radius_mm',
+    'x_mm', 'x_reference', 'x_from_edge', 'y_mm', 'y_reference', 'y_from_edge', 'touching_edge',
+    'width_dimension_id', 'height_dimension_id', 'diameter_dimension_id', 'radius_dimension_id', 'x_dimension_id', 'y_dimension_id',
+    'confidence', 'source_note',
+  ],
 };
 
 const part = {
@@ -66,9 +84,15 @@ const part = {
         width_mm: { type: ['number', 'null'] },
         height_mm: { type: ['number', 'null'] },
         diameter_mm: { type: ['number', 'null'] },
+        width_dimension_id: nullableDimensionId,
+        height_dimension_id: nullableDimensionId,
+        diameter_dimension_id: nullableDimensionId,
         confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
       },
-      required: ['type', 'width_mm', 'height_mm', 'diameter_mm', 'confidence'],
+      required: [
+        'type', 'width_mm', 'height_mm', 'diameter_mm',
+        'width_dimension_id', 'height_dimension_id', 'diameter_dimension_id', 'confidence',
+      ],
     },
     features: { type: 'array', items: feature },
     dimension_ids: { type: 'array', items: { type: 'string' } },

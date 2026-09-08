@@ -1,0 +1,56 @@
+name: Deploy Quick DXF prototype to Netlify
+
+on:
+  push:
+    branches:
+      - prototype-v1
+    paths:
+      - 'docs/netlify-branch-deploy-trigger.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout prototype branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify Netlify credential exists
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ]; then
+            echo "NETLIFY_AUTH_TOKEN is not available to this repository."
+            exit 1
+          fi
+
+      - name: Install function dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build static publish directory
+        run: |
+          rm -rf dist
+          mkdir -p dist/core
+          cp index.html styles.css job.css app-v4.js dist/
+          cp core/dxf.js core/geometry.js core/confirmation-pdf.js dist/core/
+
+      - name: Deploy prototype to existing Netlify production site
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: 548a519d-04f8-4d5b-9b0d-13e2d5d0206d
+        run: |
+          npx --yes netlify-cli deploy \
+            --dir=dist \
+            --functions=netlify/functions \
+            --site="$NETLIFY_SITE_ID" \
+            --auth="$NETLIFY_AUTH_TOKEN" \
+            --prod \
+            --message="Quick DXF prototype-v1 controlled deploy"

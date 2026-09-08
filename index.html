@@ -1,179 +1,108 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0f172a" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f172a">
   <title>Sapiver Draw DXF</title>
-  <meta name="description" content="Sapiver Draw DXF — turn dimensioned PDFs, images and workshop sketches into verified DXF geometry." />
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f6f7f9;
-      --panel: #ffffff;
-      --ink: #111827;
-      --muted: #667085;
-      --line: #d8dde6;
-      --accent: #0f172a;
-      --soft: #eef2f6;
-      --ok: #166534;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--ink);
-      display: grid;
-      place-items: center;
-      padding: 24px;
-    }
-
-    main {
-      width: min(760px, 100%);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      box-shadow: 0 18px 50px rgba(15, 23, 42, 0.08);
-      overflow: hidden;
-    }
-
-    header {
-      padding: 28px 30px 18px;
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      justify-content: space-between;
-      gap: 20px;
-      align-items: center;
-    }
-
-    .brand {
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      font-size: 1.15rem;
-    }
-
-    .status {
-      font-size: 0.78rem;
-      font-weight: 700;
-      color: var(--ok);
-      background: #ecfdf3;
-      border: 1px solid #bbf7d0;
-      border-radius: 999px;
-      padding: 6px 10px;
-      white-space: nowrap;
-    }
-
-    .content { padding: 42px 30px 34px; }
-
-    h1 {
-      margin: 0;
-      max-width: 620px;
-      font-size: clamp(2.1rem, 7vw, 4rem);
-      line-height: 0.98;
-      letter-spacing: -0.055em;
-    }
-
-    .lead {
-      margin: 20px 0 0;
-      max-width: 600px;
-      color: var(--muted);
-      font-size: 1.05rem;
-      line-height: 1.65;
-    }
-
-    .flow {
-      margin-top: 34px;
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 10px;
-    }
-
-    .step {
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 16px;
-      background: #fff;
-      min-height: 110px;
-    }
-
-    .step b {
-      display: block;
-      margin-bottom: 7px;
-      font-size: 0.92rem;
-    }
-
-    .step span {
-      color: var(--muted);
-      font-size: 0.86rem;
-      line-height: 1.45;
-    }
-
-    .placeholder {
-      margin-top: 24px;
-      padding: 18px;
-      border: 1px dashed #98a2b3;
-      border-radius: 12px;
-      background: var(--soft);
-      color: #475467;
-      text-align: center;
-      font-size: 0.92rem;
-    }
-
-    footer {
-      padding: 18px 30px 24px;
-      color: var(--muted);
-      font-size: 0.78rem;
-    }
-
-    @media (max-width: 640px) {
-      body { padding: 12px; }
-      header, .content, footer { padding-left: 20px; padding-right: 20px; }
-      header { align-items: flex-start; }
-      .flow { grid-template-columns: 1fr; }
-      .step { min-height: 0; }
-    }
-  </style>
+  <meta name="description" content="Review dimensions on a drawing, trace fabrication geometry and export a DXF.">
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-  <main>
-    <header>
+  <header class="topbar">
+    <div>
       <div class="brand">Sapiver Draw DXF</div>
-      <div class="status">Prototype space reserved</div>
-    </header>
+      <div class="subbrand">Drawing in. Verified geometry out.</div>
+    </div>
+    <span class="badge">Prototype v1 · local processing</span>
+  </header>
 
-    <section class="content">
-      <h1>Drawing in. DXF out.</h1>
-      <p class="lead">
-        A focused tool for turning dimensioned PDFs, PNGs, JPGs and workshop sketches into verified DXF geometry. The production workflow will keep human confirmation between interpretation and export.
-      </p>
+  <main class="app-shell">
+    <section class="workspace-card">
+      <div class="toolbar">
+        <label class="button primary file-button">
+          Open drawing
+          <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" hidden>
+        </label>
+        <button id="addDimensionBtn" class="button" type="button" disabled>Add dimension</button>
+        <button id="traceBtn" class="button" type="button" disabled>Trace cut</button>
+        <button id="finishTraceBtn" class="button" type="button" disabled>Finish shape</button>
+        <button id="undoBtn" class="button quiet" type="button" disabled>Undo point</button>
+      </div>
 
-      <div class="flow" aria-label="Planned workflow">
-        <div class="step">
-          <b>1. Upload</b>
-          <span>PDF, image or phone photo of a dimensioned drawing.</span>
-        </div>
-        <div class="step">
-          <b>2. Confirm</b>
-          <span>Click through detected dimensions, edit mistakes and resolve ambiguity.</span>
-        </div>
-        <div class="step">
-          <b>3. Export</b>
-          <span>Generate clean DXF geometry for the required cut or fabrication workflow.</span>
+      <div id="notice" class="notice">
+        Open a PDF or image. In this first prototype you mark dimensions and cut geometry manually; the same review flow is intended for automatic detection later.
+      </div>
+
+      <div class="drawing-stage" id="drawingStage">
+        <canvas id="drawingCanvas" width="1200" height="800" aria-label="Drawing review canvas"></canvas>
+        <div id="emptyState" class="empty-state">
+          <strong>No drawing loaded</strong>
+          <span>PDF, PNG, JPG or WebP</span>
         </div>
       </div>
 
-      <div class="placeholder">
-        Initial Netlify placeholder. Upload, dimension review and DXF generation will be added here next.
+      <div class="status-row">
+        <span id="modeStatus">Mode: idle</span>
+        <span id="scaleStatus">Scale: not set</span>
+        <span id="shapeStatus">Cut shapes: 0</span>
       </div>
     </section>
 
-    <footer>
-      Sapiver Press · Draw DXF prototype
-    </footer>
+    <aside class="review-card">
+      <div class="review-head">
+        <div>
+          <p class="eyebrow">Dimension review</p>
+          <h1 id="dimensionHeading">No dimensions yet</h1>
+        </div>
+        <span id="dimensionCount" class="counter">0 / 0</span>
+      </div>
+
+      <div id="dimensionEditor" class="editor disabled" aria-disabled="true">
+        <label>
+          Description
+          <input id="dimensionLabel" type="text" placeholder="e.g. overall width" disabled>
+        </label>
+        <label>
+          Figured dimension
+          <div class="input-with-unit">
+            <input id="dimensionValue" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" disabled>
+            <span>mm</span>
+          </div>
+        </label>
+
+        <div class="measurement-box">
+          <div><span>Measured on image</span><strong id="pixelLength">—</strong></div>
+          <div><span>Check against scale</span><strong id="scaleCheck">—</strong></div>
+        </div>
+
+        <div class="button-row">
+          <button id="confirmDimensionBtn" class="button primary" type="button" disabled>Confirm</button>
+          <button id="useScaleBtn" class="button" type="button" disabled>Use as scale</button>
+          <button id="ignoreDimensionBtn" class="button danger-quiet" type="button" disabled>Ignore</button>
+        </div>
+
+        <div class="pager">
+          <button id="prevDimensionBtn" class="button quiet" type="button" disabled>Previous</button>
+          <button id="nextDimensionBtn" class="button quiet" type="button" disabled>Next</button>
+        </div>
+      </div>
+
+      <hr>
+
+      <div class="export-block">
+        <p class="eyebrow">DXF export</p>
+        <p class="helper">Export contains only traced closed polylines on the <code>CUT</code> layer. A confirmed scale reference is required.</p>
+        <button id="exportBtn" class="button primary full" type="button" disabled>Download DXF</button>
+        <p id="exportMessage" class="small muted">Add one confirmed scale dimension and at least one closed cut shape.</p>
+      </div>
+    </aside>
   </main>
+
+  <footer>
+    Prototype rule: figured dimensions are authoritative. Do not use image scale for production unless the operator has explicitly confirmed the reference dimension.
+  </footer>
+
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

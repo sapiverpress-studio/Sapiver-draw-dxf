@@ -26,8 +26,12 @@ export function safeFileId(value) {
   return /^[A-Za-z0-9][A-Za-z0-9._-]{5,159}$/.test(id) ? id : null;
 }
 
-export function jobKey(id) {
-  return `jobs/${id}.json`;
+export function jobRevisionKey(id, revision) {
+  return `jobs/${id}/r${Math.max(1, Number(revision) || 1)}.json`;
+}
+
+export function jobHeadKey(id) {
+  return `heads/${id}.json`;
 }
 
 export function fileKey(jobId, revision, fileId) {
@@ -49,15 +53,19 @@ export function summary(job) {
   };
 }
 
-export function assertMutable(existing, incoming) {
-  if (!existing) return;
-  const frozen = ['locked', 'sent'].includes(existing.status);
-  if (!frozen) return;
-  const sameRevision = Number(incoming.revision) === Number(existing.revision);
-  if (sameRevision) {
+export function assertRevisionTransition(head, incoming) {
+  if (!head) return;
+  const current = Number(head.revision) || 1;
+  const next = Number(incoming.revision) || 1;
+  const frozen = ['locked', 'sent'].includes(head.status);
+
+  if (!frozen && next === current) return;
+  if (!frozen && next !== current) {
+    throw new Error('A draft job must be completed or locked before creating another revision.');
+  }
+  if (frozen && next === current + 1) return;
+  if (frozen && next === current) {
     throw new Error('This revision is locked. Create a new revision before changing it.');
   }
-  if (Number(incoming.revision) !== Number(existing.revision) + 1) {
-    throw new Error('A locked job can only advance to the next revision.');
-  }
+  throw new Error('A locked job can only advance to the next revision.');
 }

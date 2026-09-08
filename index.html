@@ -7,6 +7,16 @@
   <title>Sapiver Draw DXF</title>
   <meta name="description" content="Review dimensions on a drawing, trace fabrication geometry and export a DXF.">
   <link rel="stylesheet" href="./styles.css">
+  <style>
+    .reference-card { border: 1px solid #d8dde6; border-radius: 12px; padding: 12px; background: #f8fafc; }
+    .reference-card select { width: 100%; margin-top: 7px; }
+    .reference-help { margin: 8px 0 0; color: #667085; font-size: .82rem; line-height: 1.4; }
+    .reference-help.needs-attention { color: #b42318; font-weight: 700; }
+    .reference-key { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 10px; }
+    .reference-key div { border: 1px solid #e4e7ec; border-radius: 9px; padding: 8px; background: white; font-size: .78rem; line-height: 1.3; }
+    .reference-key strong { display: block; margin-bottom: 3px; }
+    @media (max-width: 640px) { .reference-key { grid-template-columns: 1fr; } }
+  </style>
 </head>
 <body>
   <header class="topbar">
@@ -14,7 +24,7 @@
       <div class="brand">Sapiver Draw DXF</div>
       <div class="subbrand">Drawing in. Verified geometry out.</div>
     </div>
-    <span class="badge">Prototype v1 · local processing</span>
+    <span class="badge">Prototype v1.1 · local processing</span>
   </header>
 
   <main class="app-shell">
@@ -31,7 +41,7 @@
       </div>
 
       <div id="notice" class="notice">
-        Open a PDF or image. In this first prototype you mark dimensions and cut geometry manually; the same review flow is intended for automatic detection later.
+        Mark dimensions and cut geometry manually in this prototype. Every reviewed dimension must state whether it is a size, a centre measurement or an edge measurement before export.
       </div>
 
       <div class="drawing-stage" id="drawingStage">
@@ -61,7 +71,7 @@
       <div id="dimensionEditor" class="editor disabled" aria-disabled="true">
         <label>
           Description
-          <input id="dimensionLabel" type="text" placeholder="e.g. overall width" disabled>
+          <input id="dimensionLabel" type="text" placeholder="e.g. socket position" disabled>
         </label>
         <label>
           Figured dimension
@@ -70,6 +80,21 @@
             <span>mm</span>
           </div>
         </label>
+
+        <div class="reference-card">
+          <label for="dimensionReference"><strong>What does this dimension measure to?</strong></label>
+          <select id="dimensionReference" disabled>
+            <option value="unset">Choose…</option>
+            <option value="size">Size / overall dimension</option>
+            <option value="centre">Centre of cut-out / centreline</option>
+            <option value="edge">Edge of cut-out</option>
+          </select>
+          <p id="referenceHelp" class="reference-help">Choose how this figured dimension locates the feature before confirming it.</p>
+          <div class="reference-key" aria-label="Measurement reference guide">
+            <div><strong>Centre</strong>Use when the drawing dimension terminates at a centre/CL mark through the cut-out.</div>
+            <div><strong>Edge</strong>Use when the dimension line terminates at the actual cut-out edge.</div>
+          </div>
+        </div>
 
         <div class="measurement-box">
           <div><span>Measured on image</span><strong id="pixelLength">—</strong></div>
@@ -100,9 +125,9 @@
   </main>
 
   <footer>
-    Prototype rule: figured dimensions are authoritative. Do not use image scale for production unless the operator has explicitly confirmed the reference dimension.
+    Prototype rule: figured dimensions are authoritative. For cut-out positions, the operator must explicitly confirm centre or edge before DXF export.
   </footer>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app-v2.js"></script>
 </body>
 </html>

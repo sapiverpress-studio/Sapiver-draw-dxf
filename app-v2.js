@@ -233,17 +233,34 @@ function undoPoint() {
 function updateDimensionFromInputs() {
   const d = activeDimension();
   if (!d) return;
-  d.label = els.dimensionLabel.value.trim() || `Dimension ${state.activeDimensionIndex + 1}`;
+
+  const nextLabel = els.dimensionLabel.value.trim() || `Dimension ${state.activeDimensionIndex + 1}`;
   const value = Number(els.dimensionValue.value);
-  d.valueMm = Number.isFinite(value) && value > 0 ? value : null;
-  d.reference = els.dimensionReference.value || "unset";
+  const nextValueMm = Number.isFinite(value) && value > 0 ? value : null;
+  const nextReference = els.dimensionReference.value || "unset";
+  const changed = d.label !== nextLabel || d.valueMm !== nextValueMm || d.reference !== nextReference;
+
+  d.label = nextLabel;
+  d.valueMm = nextValueMm;
+  d.reference = nextReference;
+
+  if (changed && d.status === "confirmed") {
+    d.status = "pending";
+  }
+
   updateReview({ preserveInputs: true });
   updateExportState();
   render();
 }
 
 function dimensionIsReady(d) {
-  return Boolean(d && d.valueMm > 0 && d.reference && d.reference !== "unset");
+  return Boolean(
+    d &&
+    d.status === "confirmed" &&
+    d.valueMm > 0 &&
+    d.reference &&
+    d.reference !== "unset"
+  );
 }
 
 function confirmDimension() {

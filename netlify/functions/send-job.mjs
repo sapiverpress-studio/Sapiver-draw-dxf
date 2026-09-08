@@ -1,6 +1,7 @@
 import { jobHeadKey, jobRevisionKey, json, safeId, store } from './_quick-dxf-store.mjs';
 
 const MAX_ATTACH_BYTES = 20_000_000;
+const env = (key) => Netlify.env.get(key) || '';
 
 function validEmail(value) {
   const email = String(value || '').trim();
@@ -17,8 +18,10 @@ async function attachmentFromRef(s, ref) {
 
 export default async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
-  if (!process.env.BREVO_API_KEY) return json({ error: 'BREVO_API_KEY is not configured.' }, 503);
-  if (!process.env.QUICK_DXF_FROM_EMAIL) return json({ error: 'QUICK_DXF_FROM_EMAIL is not configured.' }, 503);
+  const brevoKey = env('BREVO_API_KEY');
+  const fromEmail = env('QUICK_DXF_FROM_EMAIL');
+  if (!brevoKey) return json({ error: 'BREVO_API_KEY is not configured.' }, 503);
+  if (!fromEmail) return json({ error: 'QUICK_DXF_FROM_EMAIL is not configured.' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); }
@@ -38,7 +41,7 @@ export default async (request) => {
   if (!Array.isArray(job.dxfFiles) || !job.dxfFiles.length) return json({ error: 'DXF output is missing.' }, 409);
 
   const toEmail = outcome === 'production'
-    ? validEmail(process.env.QUICK_DXF_PRODUCTION_EMAIL)
+    ? validEmail(env('QUICK_DXF_PRODUCTION_EMAIL'))
     : validEmail(body?.customerEmail || job.customerEmail);
   if (!toEmail) return json({ error: outcome === 'production' ? 'Production email is not configured.' : 'Customer email is required.' }, 400);
 
@@ -72,9 +75,9 @@ export default async (request) => {
 
   const brevo = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'api-key': process.env.BREVO_API_KEY },
+    headers: { 'content-type': 'application/json', 'api-key': brevoKey },
     body: JSON.stringify({
-      sender: { email: process.env.QUICK_DXF_FROM_EMAIL, name: process.env.QUICK_DXF_FROM_NAME || 'Quick DXF' },
+      sender: { email: fromEmail, name: env('QUICK_DXF_FROM_NAME') || 'Quick DXF' },
       to: [{ email: toEmail }],
       subject,
       htmlContent,

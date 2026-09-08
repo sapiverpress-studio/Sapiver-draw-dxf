@@ -1,10 +1,16 @@
-import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
+import { fileKey, jobRevisionKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
 
 const MAX_BYTES = 12_000_000;
 const ALLOWED = new Set([
   'image/jpeg', 'image/png', 'image/webp', 'application/pdf',
   'application/dxf', 'application/octet-stream', 'text/plain',
 ]);
+
+async function assertRevisionWritable(s, jobId, revision) {
+  const job = await s.get(jobRevisionKey(jobId, revision), { type: 'json' });
+  if (!job) throw new Error('Save the job revision before adding files.');
+  if (['locked', 'sent'].includes(job.status)) throw new Error('This signed revision is locked and its files cannot be changed.');
+}
 
 export default async (request) => {
   const url = new URL(request.url);
@@ -29,6 +35,8 @@ export default async (request) => {
   }
 
   if (request.method === 'POST' || request.method === 'PUT') {
+    try { await assertRevisionWritable(s, jobId, revision); }
+    catch (error) { return json({ error: error.message }, 409); }
     const contentType = String(request.headers.get('content-type') || 'application/octet-stream').split(';')[0].trim();
     if (!ALLOWED.has(contentType)) return json({ error: 'Unsupported file type.' }, 415);
     const bytes = await request.arrayBuffer();
@@ -41,6 +49,8 @@ export default async (request) => {
   }
 
   if (request.method === 'DELETE') {
+    try { await assertRevisionWritable(s, jobId, revision); }
+    catch (error) { return json({ error: error.message }, 409); }
     await s.delete(key);
     return json({ ok: true });
   }

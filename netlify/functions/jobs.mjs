@@ -1,15 +1,15 @@
-import { assertMutable, jobKey, json, safeId, store, summary } from './_quick-dxf-store.mjs';
+import { assertRevisionTransition, jobHeadKey, jobRevisionKey, json, safeId, store, summary } from './_quick-dxf-store.mjs';
 
 async function listJobs(s, query) {
   const q = String(query || '').trim().toLowerCase();
   const items = [];
   let cursor;
   do {
-    const page = await s.list({ prefix: 'jobs/', cursor });
+    const page = await s.list({ prefix: 'heads/', cursor });
     for (const blob of page.blobs || []) {
-      const job = await s.get(blob.key, { type: 'json' });
-      if (!job) continue;
-      const item = summary(job);
+      const head = await s.get(blob.key, { type: 'json' });
+      if (!head) continue;
+      const item = summary(head);
       const haystack = `${item.jobRef} ${item.customerName} ${item.date} ${item.status}`.toLowerCase();
       if (!q || haystack.includes(q)) items.push(item);
     }
@@ -28,8 +28,13 @@ export default async (request) => {
     if (id) {
       const valid = safeId(id);
       if (!valid) return json({ error: 'Invalid job ID.' }, 400);
-      const job = await s.get(jobKey(valid), { type: 'json' });
-      return job ? json({ ok: true, job }) : json({ error: 'Job not found.' }, 404);
+      const requestedRevision = Number(url.searchParams.get('revision'));
+      if (Number.isFinite(requestedRevision) && requestedRevision > 0) {
+        const job = await s.get(jobRevisionKey(valid, requestedRevision), { type: 'json' });
+        return job ? json({ ok: true, job }) : json({ error: 'Job revision not found.' }, 404);
+      }
+      const head = await s.get(jobHeadKey(valid), { type: 'json' });
+      return head ? json({ ok: true, job: head }) : json({ error: 'Job not found.' }, 404);
     }
     return json({ ok: true, jobs: await listJobs(s, url.searchParams.get('q')) });
   }
@@ -40,24 +45,27 @@ export default async (request) => {
     const id = safeId(incoming?.id);
     if (!id) return json({ error: 'Invalid job ID.' }, 400);
 
-    const key = jobKey(id);
-    const existing = await s.get(key, { type: 'json' });
-    try { assertMutable(existing, incoming); } catch (error) { return json({ error: error.message }, 409); }
+    const headKey = jobHeadKey(id);
+    const head = await s.get(headKey, { type: 'json' });
+    try { assertRevisionTransition(head, incoming); } catch (error) { return json({ error: error.message }, 409); }
 
     const now = new Date().toISOString();
+    const revision = Math.max(1, Number(incoming.revision) || 1);
+    const previousSameRevision = await s.get(jobRevisionKey(id, revision), { type: 'json' });
     const job = {
       ...incoming,
       id,
-      revision: Math.max(1, Number(incoming.revision) || 1),
-      createdAt: existing?.createdAt || incoming.createdAt || now,
+      revision,
+      createdAt: head?.createdAt || incoming.createdAt || now,
+      revisionCreatedAt: previousSameRevision?.revisionCreatedAt || now,
       updatedAt: now,
     };
-    await s.setJSON(key, job, {
-      metadata: {
-        updatedAt: now,
-        status: job.status || 'draft',
-        jobRef: String(job.jobRef || '').slice(0, 120),
-      },
+
+    await s.setJSON(jobRevisionKey(id, revision), job, {
+      metadata: { updatedAt: now, status: job.status || 'draft', revision: String(revision) },
+    });
+    await s.setJSON(headKey, job, {
+      metadata: { updatedAt: now, status: job.status || 'draft', jobRef: String(job.jobRef || '').slice(0, 120) },
     });
     return json({ ok: true, job, summary: summary(job) });
   }

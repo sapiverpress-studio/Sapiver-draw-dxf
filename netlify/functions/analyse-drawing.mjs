@@ -3,6 +3,7 @@ import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs
 import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA } from './_quick-dxf-analysis.mjs';
 
 const MODEL = 'gpt-5.6-sol';
+const env = (key) => Netlify.env.get(key) || '';
 
 function base64(bytes) {
   return Buffer.from(bytes).toString('base64');
@@ -16,7 +17,8 @@ function resolveStoredFileKey(jobId, revision, fileId, suppliedKey) {
 
 export default async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
-  if (!process.env.QUICK_DXF_API) return json({ error: 'QUICK_DXF_API is not configured on the server.' }, 503);
+  const apiKey = env('QUICK_DXF_API');
+  if (!apiKey) return json({ error: 'QUICK_DXF_API is not configured on the server.' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); }
@@ -35,7 +37,7 @@ export default async (request) => {
   const filename = String(metadata?.metadata?.filename || body?.filename || fileId);
   const bytes = await new Response(stream).arrayBuffer();
 
-  const openai = new OpenAI({ apiKey: process.env.QUICK_DXF_API, maxRetries: 0, timeout: 120_000 });
+  const openai = new OpenAI({ apiKey, maxRetries: 0, timeout: 120_000 });
   let uploadedFile;
   let sourcePart;
 

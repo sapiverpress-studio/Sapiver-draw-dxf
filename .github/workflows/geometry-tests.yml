@@ -8,6 +8,8 @@ on:
       - 'core/**'
       - 'tests/**'
       - 'app-v4.js'
+      - 'index.html'
+      - 'job-v4.css'
       - 'netlify/functions/**'
       - '.github/workflows/geometry-tests.yml'
   workflow_dispatch:
@@ -35,3 +37,5 @@ jobs:
           for file in netlify/functions/*.mjs; do node --check "$file"; done
       - name: Run deterministic geometry tests
         run: node tests/geometry.test.mjs
+      - name: Check browser UI contract
+        run: node tests/ui-contract.test.mjs

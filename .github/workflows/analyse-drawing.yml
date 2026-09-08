@@ -10,6 +10,7 @@ on:
       - 'run-tests/**/*.jpeg'
       - 'run-tests/**/*.webp'
       - 'run-tests/**/*.pdf'
+      - 'run-tests/**/*.retry'
 
 permissions:
   contents: read
@@ -32,20 +33,32 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install OpenAI SDK
-        run: python -m pip install --disable-pip-version-check 'openai>=2.0,<3.0'
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check 'openai>=2.0,<3.0' 'pillow>=11,<13'
 
-      - name: Find drawing added in this commit
+      - name: Resolve drawing for this test
         id: drawing
         shell: bash
         run: |
-          DRAWING=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" \
+          CHANGED=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+          DRAWING=$(printf '%s\n' "$CHANGED" \
             | grep -Ei '^run-tests/.+\.(png|jpe?g|webp|pdf)$' \
             | head -n 1 || true)
+
           if [ -z "$DRAWING" ]; then
-            echo 'No supported drawing found in this commit.'
+            MARKER=$(printf '%s\n' "$CHANGED" \
+              | grep -Ei '^run-tests/.+\.retry$' \
+              | head -n 1 || true)
+            if [ -n "$MARKER" ]; then
+              DRAWING=$(head -n 1 "$MARKER" | tr -d '\r')
+            fi
+          fi
+
+          if [ -z "$DRAWING" ] || [ ! -f "$DRAWING" ]; then
+            echo 'No supported drawing could be resolved for this test.'
             exit 1
           fi
+
           echo "path=$DRAWING" >> "$GITHUB_OUTPUT"
           echo "Testing: $DRAWING"
 

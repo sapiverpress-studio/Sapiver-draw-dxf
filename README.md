@@ -1,36 +1,54 @@
 # Sapiver Draw DXF
 
-Browser-first prototype for converting dimensioned drawings and workshop sketches into DXF cut geometry with a mandatory human verification step.
+Prototype for **Quick DXF**: a trade-counter/site workflow for turning a simple customer sketch, photo or PDF into a checked 2D DXF.
 
-## Current prototype
+## Product direction
+
+1. Shop assistant takes a photo or opens a customer image/PDF.
+2. AI proposes the simple fabrication geometry and reads figured dimensions.
+3. Assistant/customer reviews only the proposed values, including whether positional dimensions are measured to a **centre** or an **edge**.
+4. Customer confirms the interpreted drawing.
+5. Deterministic code generates the DXF from the confirmed data.
+6. If manufacture is ordered, DXF preparation is included and the job can be retained for repeat work. If the customer wants the DXF file exported, the proposed counter price is £5 for one drawing or £10 for multiple drawings in the same job.
+
+The AI interprets the source; it does not have final authority over production geometry.
+
+## Current browser prototype
 
 - Opens PNG, JPG, WebP and the first page of a PDF.
-- Operator marks figured dimensions by clicking two points.
-- Dimensions can be edited, confirmed, ignored, and one can be chosen as the scale reference.
-- The review panel shows how other figured dimensions compare with the selected image scale.
-- Operator traces one or more closed cut shapes.
-- Exports a millimetre DXF containing closed `LWPOLYLINE` entities on the `CUT` layer.
-- Processing is local in the browser. No drawing is uploaded by this prototype.
+- Supports dimension review with explicit **size / centre / edge** reference types.
+- Editing a confirmed dimension invalidates its confirmation until it is re-approved.
+- Manual tracing remains available as a fallback while automatic interpretation is being tested.
+- Exports millimetre DXF closed `LWPOLYLINE` geometry on the `CUT` layer.
+- `core/dxf.js` is isolated for later reuse in Expo.
 
-## Safety rule
+## Controlled AI benchmark
 
-The image itself is not treated as authoritative scale. A figured dimension must be explicitly confirmed and selected as the scale reference before DXF export is enabled.
+The repository contains a deliberately controlled GitHub Actions test harness:
 
-Phone photographs with perspective distortion should not be treated as production-accurate from one scale reference. Perspective correction / multi-constraint reconstruction belongs in a later stage.
+- `tools/analyse_drawing.py` sends one drawing to the OpenAI Responses API and requests strict structured geometry/dimension JSON.
+- `.github/workflows/analyse-drawing.yml` runs only when a supported drawing is pushed under `run-tests/` on branch `prototype-v1`.
+- It uses repository secret `QUICK_DXF_API`.
+- Automatic OpenAI retries are disabled so one trigger does not silently cause repeated model calls.
+- The default benchmark model is `gpt-5.6-terra` with low reasoning effort.
+- The response uses `store: false`.
+- Temporary PDF uploads are deleted after analysis where possible.
+- The result artifact contains extracted geometry, uncertainties, token usage and estimated API cost.
 
-## Architecture
+See `run-tests/README.md` before uploading a test drawing. Uploading a supported drawing there deliberately incurs an API call.
 
-- `index.html` — static shell
-- `styles.css` — responsive workshop UI
-- `app.js` — drawing review state and interaction
-- `core/dxf.js` — isolated DXF writer intended to be reusable when the project moves to Expo
+## Safety rules
 
-No build step is currently required.
+- Figured dimensions are authoritative; never infer a production dimension from apparent image scale.
+- Centre/edge positional intent must be confirmed where applicable.
+- AI output is a proposal for human confirmation, not a manufacturing instruction.
+- A DXF should not be treated as production-ready while required dimensions or geometric relationships remain unresolved.
 
-## Planned next stages
+## Architecture direction
 
-1. Geometry editing and delete/redo controls.
-2. Multi-page PDF selection.
-3. Perspective correction for photographed sketches.
-4. Automatic dimension/geometry suggestions feeding the same human-review model.
-5. Reuse the core geometry/DXF logic in Expo once the browser workflow is proven.
+- browser/Expo UI — capture and human verification
+- vision/API layer — proposes geometry and dimensions
+- structured job model — confirmed values and customer intent
+- deterministic geometry/DXF engine — final file creation
+
+Netlify deployment is intentionally separate from GitHub development and must not be triggered without explicit approval.

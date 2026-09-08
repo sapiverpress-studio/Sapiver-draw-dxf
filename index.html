@@ -4,130 +4,145 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f172a">
-  <title>Sapiver Draw DXF</title>
-  <meta name="description" content="Review dimensions on a drawing, trace fabrication geometry and export a DXF.">
+  <title>Quick DXF</title>
+  <meta name="description" content="Trade-counter drawing confirmation and DXF workflow.">
   <link rel="stylesheet" href="./styles.css">
-  <style>
-    .reference-card { border: 1px solid #d8dde6; border-radius: 12px; padding: 12px; background: #f8fafc; }
-    .reference-card select { width: 100%; margin-top: 7px; }
-    .reference-help { margin: 8px 0 0; color: #667085; font-size: .82rem; line-height: 1.4; }
-    .reference-help.needs-attention { color: #b42318; font-weight: 700; }
-    .reference-key { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; margin-top: 10px; }
-    .reference-key div { border: 1px solid #e4e7ec; border-radius: 9px; padding: 8px; background: white; font-size: .78rem; line-height: 1.3; }
-    .reference-key strong { display: block; margin-bottom: 3px; }
-    @media (max-width: 640px) { .reference-key { grid-template-columns: 1fr; } }
-  </style>
+  <link rel="stylesheet" href="./job.css">
 </head>
 <body>
-  <header class="topbar">
+  <header class="topbar no-print">
     <div>
-      <div class="brand">Sapiver Draw DXF</div>
-      <div class="subbrand">Drawing in. Verified geometry out.</div>
+      <div class="brand">Quick DXF</div>
+      <div class="subbrand">Capture → confirm → sign → production</div>
     </div>
-    <span class="badge">Prototype v1.1 · local processing</span>
+    <span id="revisionBadge" class="badge">Revision 1 · Draft</span>
   </header>
 
-  <main class="app-shell">
-    <section class="workspace-card">
-      <div class="toolbar">
-        <label class="button primary file-button">
-          Open drawing
-          <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" hidden>
-        </label>
-        <button id="addDimensionBtn" class="button" type="button" disabled>Add dimension</button>
-        <button id="traceBtn" class="button" type="button" disabled>Trace cut</button>
-        <button id="finishTraceBtn" class="button" type="button" disabled>Finish shape</button>
-        <button id="undoBtn" class="button quiet" type="button" disabled>Undo point</button>
-      </div>
-
-      <div id="notice" class="notice">
-        Mark dimensions and cut geometry manually in this prototype. Every reviewed dimension must state whether it is a size, a centre measurement or an edge measurement before export.
-      </div>
-
-      <div class="drawing-stage" id="drawingStage">
-        <canvas id="drawingCanvas" width="1200" height="800" aria-label="Drawing review canvas"></canvas>
-        <div id="emptyState" class="empty-state">
-          <strong>No drawing loaded</strong>
-          <span>PDF, PNG, JPG or WebP</span>
+  <main class="job-shell no-print">
+    <section class="panel job-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">1 · Job</p>
+          <h1>Job details</h1>
         </div>
       </div>
 
-      <div class="status-row">
-        <span id="modeStatus">Mode: idle</span>
-        <span id="scaleStatus">Scale: not set</span>
-        <span id="shapeStatus">Cut shapes: 0</span>
+      <div class="job-grid">
+        <label>Job reference<input id="jobRef" type="text" placeholder="e.g. 18437"></label>
+        <label>Customer name<input id="customerName" type="text" placeholder="Customer / company"></label>
+        <label>Staff member<input id="staffName" type="text" placeholder="Assistant"></label>
+        <label>Date<input id="jobDate" type="date"></label>
       </div>
     </section>
 
-    <aside class="review-card">
-      <div class="review-head">
+    <section class="panel source-panel">
+      <div class="section-head">
         <div>
-          <p class="eyebrow">Dimension review</p>
-          <h1 id="dimensionHeading">No dimensions yet</h1>
+          <p class="eyebrow">2 · Source drawings</p>
+          <h1>Images and PDFs</h1>
+          <p class="helper">One job can contain multiple drawings, detail photos or PDF pages. Every included source is frozen when the revision is approved.</p>
         </div>
-        <span id="dimensionCount" class="counter">0 / 0</span>
+        <span id="sourceCount" class="counter">0 drawings</span>
       </div>
 
-      <div id="dimensionEditor" class="editor disabled" aria-disabled="true">
-        <label>
-          Description
-          <input id="dimensionLabel" type="text" placeholder="e.g. socket position" disabled>
-        </label>
-        <label>
-          Figured dimension
-          <div class="input-with-unit">
-            <input id="dimensionValue" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" disabled>
-            <span>mm</span>
-          </div>
-        </label>
+      <div class="capture-row">
+        <label class="button primary file-button">Take photo<input id="cameraInput" type="file" accept="image/*" capture="environment" hidden></label>
+        <label class="button file-button">Add images / PDF<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" multiple hidden></label>
+      </div>
 
-        <div class="reference-card">
-          <label for="dimensionReference"><strong>What does this dimension measure to?</strong></label>
-          <select id="dimensionReference" disabled>
-            <option value="unset">Choose…</option>
-            <option value="size">Size / overall dimension</option>
-            <option value="centre">Centre of cut-out / centreline</option>
-            <option value="edge">Edge of cut-out</option>
-          </select>
-          <p id="referenceHelp" class="reference-help">Choose how this figured dimension locates the feature before confirming it.</p>
-          <div class="reference-key" aria-label="Measurement reference guide">
-            <div><strong>Centre</strong>Use when the drawing dimension terminates at a centre/CL mark through the cut-out.</div>
-            <div><strong>Edge</strong>Use when the dimension line terminates at the actual cut-out edge.</div>
-          </div>
+      <div id="sourceStrip" class="source-strip" aria-label="Job drawings"></div>
+      <div id="sourceEmpty" class="source-empty">No drawings added to this job.</div>
+    </section>
+
+    <section class="panel review-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">3 · Confirm</p>
+          <h1 id="activeSourceTitle">Select a drawing</h1>
+          <p id="activeSourceMeta" class="helper">AI will propose geometry and dimensions. Every production dimension must be confirmed by the assistant/customer.</p>
+        </div>
+        <span id="reviewProgress" class="counter">0 / 0 confirmed</span>
+      </div>
+
+      <div class="review-layout">
+        <div class="drawing-preview-wrap">
+          <img id="drawingPreview" alt="Selected source drawing" hidden>
+          <div id="drawingPlaceholder" class="drawing-placeholder">Select or add a drawing</div>
         </div>
 
-        <div class="measurement-box">
-          <div><span>Measured on image</span><strong id="pixelLength">—</strong></div>
-          <div><span>Check against scale</span><strong id="scaleCheck">—</strong></div>
+        <div class="dimension-side">
+          <div id="aiState" class="ai-state">Awaiting analysis</div>
+          <div id="dimensionList" class="dimension-list"></div>
+          <div id="dimensionEmpty" class="dimension-empty">No proposed dimensions yet. The production backend will populate these from the AI analysis.</div>
+          <button id="addCorrectionBtn" class="button quiet full" type="button" disabled>Add / correct dimension</button>
         </div>
+      </div>
+    </section>
 
-        <div class="button-row">
-          <button id="confirmDimensionBtn" class="button primary" type="button" disabled>Confirm</button>
-          <button id="useScaleBtn" class="button" type="button" disabled>Use as scale</button>
-          <button id="ignoreDimensionBtn" class="button danger-quiet" type="button" disabled>Ignore</button>
-        </div>
-
-        <div class="pager">
-          <button id="prevDimensionBtn" class="button quiet" type="button" disabled>Previous</button>
-          <button id="nextDimensionBtn" class="button quiet" type="button" disabled>Next</button>
+    <section class="panel approval-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">4 · Customer confirmation</p>
+          <h1>Confirmation pack</h1>
+          <p class="helper">Single-drawing jobs are designed to fit clearly on one sheet. Multi-drawing jobs generate a cover approval page plus drawing pages as needed so detail is not shrunk into unreadable thumbnails.</p>
         </div>
       </div>
 
-      <hr>
-
-      <div class="export-block">
-        <p class="eyebrow">DXF export</p>
-        <p class="helper">Export contains only traced closed polylines on the <code>CUT</code> layer. A confirmed scale reference is required.</p>
-        <button id="exportBtn" class="button primary full" type="button" disabled>Download DXF</button>
-        <p id="exportMessage" class="small muted">Add one confirmed scale dimension and at least one closed cut shape.</p>
+      <div class="approval-actions">
+        <button id="printBtn" class="button primary" type="button" disabled>Print / Save confirmation PDF</button>
+        <label class="button file-button">Photograph signed confirmation<input id="signedInput" type="file" accept="image/*" capture="environment" hidden></label>
       </div>
-    </aside>
+
+      <div id="signedState" class="signed-state">No signed confirmation attached.</div>
+      <label class="confirmation-check"><input id="customerConfirmed" type="checkbox"> Customer has checked the clean drawing(s), dimensions and feature positions and confirms they are correct for manufacture.</label>
+    </section>
+
+    <section class="panel release-panel">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">5 · Release</p>
+          <h1>Production or export</h1>
+        </div>
+      </div>
+
+      <div class="release-grid">
+        <button id="productionBtn" class="release-choice" type="button" disabled>
+          <strong>Manufacture with us</strong>
+          <span>DXF preparation included and retained against the job.</span>
+        </button>
+        <button id="exportChoiceBtn" class="release-choice" type="button" disabled>
+          <strong>Customer DXF export</strong>
+          <span>£5 single drawing · £10 multi-drawing same job.</span>
+        </button>
+      </div>
+      <p id="releaseMessage" class="helper release-message">Add drawings and complete confirmation before release.</p>
+    </section>
   </main>
 
-  <footer>
-    Prototype rule: figured dimensions are authoritative. For cut-out positions, the operator must explicitly confirm centre or edge before DXF export.
+  <section id="printPack" class="print-pack" aria-hidden="true"></section>
+
+  <template id="dimensionTemplate">
+    <article class="dimension-row">
+      <div class="dimension-main">
+        <input class="dimension-label" type="text" aria-label="Dimension description">
+        <div class="dimension-value-wrap"><input class="dimension-value" type="number" min="0" step="0.01" inputmode="decimal"><span>mm</span></div>
+      </div>
+      <div class="dimension-ref-wrap">
+        <select class="dimension-ref" aria-label="Dimension reference">
+          <option value="size">Size / overall</option>
+          <option value="centre">Centre</option>
+          <option value="edge">Edge</option>
+          <option value="unknown">Unknown</option>
+        </select>
+        <button class="dimension-confirm button" type="button">Confirm</button>
+      </div>
+    </article>
+  </template>
+
+  <footer class="no-print">
+    Production rule: AI proposes. The assistant/customer confirms every production dimension. A signed, locked revision is immutable; later changes create a new revision.
   </footer>
 
-  <script type="module" src="./app-v2.js"></script>
+  <script type="module" src="./app-v3.js"></script>
 </body>
 </html>

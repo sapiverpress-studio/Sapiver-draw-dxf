@@ -1,0 +1,72 @@
+name: Quick DXF AI test
+
+on:
+  push:
+    branches:
+      - prototype-v1
+    paths:
+      - 'run-tests/**/*.png'
+      - 'run-tests/**/*.jpg'
+      - 'run-tests/**/*.jpeg'
+      - 'run-tests/**/*.webp'
+      - 'run-tests/**/*.pdf'
+
+permissions:
+  contents: read
+
+jobs:
+  analyse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OPENAI_API_KEY: ${{ secrets.QUICK_DXF_API }}
+
+    steps:
+      - name: Checkout prototype branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install OpenAI SDK
+        run: python -m pip install --disable-pip-version-check 'openai>=2.0,<3.0'
+
+      - name: Find drawing added in this commit
+        id: drawing
+        shell: bash
+        run: |
+          DRAWING=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA" \
+            | grep -Ei '^run-tests/.+\.(png|jpe?g|webp|pdf)$' \
+            | head -n 1 || true)
+          if [ -z "$DRAWING" ]; then
+            echo 'No supported drawing found in this commit.'
+            exit 1
+          fi
+          echo "path=$DRAWING" >> "$GITHUB_OUTPUT"
+          echo "Testing: $DRAWING"
+
+      - name: Confirm API secret is available
+        shell: bash
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo 'QUICK_DXF_API repository secret is missing.'
+            exit 1
+          fi
+
+      - name: Analyse drawing once
+        run: >-
+          python tools/analyse_drawing.py
+          "${{ steps.drawing.outputs.path }}"
+          --model gpt-5.6-terra
+          --effort low
+          --output-dir output
+
+      - name: Upload analysis result
+        uses: actions/upload-artifact@v4
+        with:
+          name: quick-dxf-analysis-${{ github.run_number }}
+          path: output/*.json
+          retention-days: 7
+          if-no-files-found: error

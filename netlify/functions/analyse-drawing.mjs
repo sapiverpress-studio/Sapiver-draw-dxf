@@ -8,6 +8,12 @@ function base64(bytes) {
   return Buffer.from(bytes).toString('base64');
 }
 
+function resolveStoredFileKey(jobId, revision, fileId, suppliedKey) {
+  const explicit = String(suppliedKey || '');
+  if (explicit.startsWith(`files/${jobId}/`) && !explicit.includes('..')) return explicit;
+  return fileKey(jobId, revision, fileId);
+}
+
 export default async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
   if (!process.env.QUICK_DXF_API) return json({ error: 'QUICK_DXF_API is not configured on the server.' }, 503);
@@ -21,7 +27,7 @@ export default async (request) => {
   if (!jobId || !fileId) return json({ error: 'Invalid drawing reference.' }, 400);
 
   const s = store();
-  const key = fileKey(jobId, revision, fileId);
+  const key = resolveStoredFileKey(jobId, revision, fileId, body?.fileKey);
   const stream = await s.get(key, { type: 'stream' });
   if (!stream) return json({ error: 'Drawing file not found.' }, 404);
   const metadata = await s.getMetadata(key).catch(() => null);
@@ -41,7 +47,7 @@ export default async (request) => {
         purpose: 'user_data',
         expires_after: { anchor: 'created_at', seconds: 3600 },
       });
-      sourcePart = { type: 'input_file', file_id: uploadedFile.id, detail: 'high' };
+      sourcePart = { type: 'input_file', file_id: uploadedFile.id };
     } else if (/^image\/(jpeg|png|webp)$/.test(contentType)) {
       sourcePart = {
         type: 'input_image',

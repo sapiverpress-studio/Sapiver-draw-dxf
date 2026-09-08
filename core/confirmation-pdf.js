@@ -40,6 +40,51 @@ async function embedPreview(pdfDoc, source) {
   }
 }
 
+function drawCompiledGeometry(page, geometry, x, y, width, height, font, fontBold, rgb) {
+  if (!geometry?.ok || !Array.isArray(geometry.parts) || !geometry.parts.length) return false;
+  page.drawRectangle({ x, y, width, height, borderWidth: 0.6, borderColor: rgb(0.7, 0.7, 0.7) });
+  const cols = geometry.parts.length > 1 ? 2 : 1;
+  const rows = Math.ceil(geometry.parts.length / cols);
+  const cellW = width / cols;
+  const cellH = height / rows;
+
+  geometry.parts.forEach((part, index) => {
+    const col = index % cols;
+    const row = Math.floor(index / cols);
+    const cellX = x + col * cellW;
+    const cellY = y + height - (row + 1) * cellH;
+    const labelH = 22;
+    const footerH = 16;
+    const pad = 12;
+    const availW = cellW - pad * 2;
+    const availH = cellH - pad * 2 - labelH - footerH;
+    const scale = Math.min(availW / part.bounds.width, availH / part.bounds.height);
+    const ox = cellX + (cellW - part.bounds.width * scale) / 2;
+    const oy = cellY + footerH + pad + (availH - part.bounds.height * scale) / 2;
+
+    page.drawText(safe(part.label, `Part ${index + 1}`), { x: cellX + pad, y: cellY + cellH - 15, font: fontBold, size: 8 });
+    for (const entity of part.entities || []) {
+      const thickness = entity.role === 'outer' ? 1.2 : 0.85;
+      if (entity.type === 'circle') {
+        page.drawCircle({ x: ox + entity.cx * scale, y: oy + entity.cy * scale, size: entity.r * scale, borderWidth: thickness, borderColor: rgb(0.08, 0.08, 0.08) });
+      } else if (entity.type === 'polyline' && entity.points?.length) {
+        const pts = entity.points;
+        for (let i = 0; i < pts.length; i += 1) {
+          const a = pts[i];
+          const b = pts[(i + 1) % pts.length];
+          if (i === pts.length - 1 && entity.closed === false) break;
+          page.drawLine({ start: { x: ox + a.x * scale, y: oy + a.y * scale }, end: { x: ox + b.x * scale, y: oy + b.y * scale }, thickness, color: rgb(0.08, 0.08, 0.08) });
+        }
+      }
+    }
+    const sizeText = part.profile?.type === 'rectangle'
+      ? `${part.profile.width} x ${part.profile.height} mm`
+      : `Diameter ${part.profile?.diameter ?? '—'} mm`;
+    page.drawText(sizeText, { x: cellX + pad, y: cellY + 6, font, size: 7, color: rgb(0.3, 0.3, 0.3) });
+  });
+  return true;
+}
+
 function drawHeader(page, fontBold, job, label) {
   page.drawText('QUICK DXF - CUSTOMER CONFIRMATION', { x: 36, y: 808, font: fontBold, size: 12 });
   page.drawText(`${label}   Job ${safe(job.jobRef, job.id)}   Rev ${job.revision}`, { x: 36, y: 789, font: fontBold, size: 9 });
@@ -126,19 +171,21 @@ export async function buildConfirmationPdf(job) {
     drawHeader(page, fontBold, job, label);
     page.drawText(safe(source.name), { x: 36, y: 760, font: fontBold, size: 10 });
 
-    const image = await embedPreview(pdfDoc, source);
-    let tableY = 430;
-    if (image) {
-      const bounds = image.scale(1);
-      const maxW = 523, maxH = 300;
-      const scale = Math.min(maxW / bounds.width, maxH / bounds.height, 1);
-      const w = bounds.width * scale, h = bounds.height * scale;
-      page.drawRectangle({ x: 36, y: 445, width: 523, height: 295, borderWidth: 0.5, borderColor: rgb(0.75, 0.75, 0.75) });
-      page.drawImage(image, { x: 36 + (523 - w) / 2, y: 445 + (295 - h) / 2, width: w, height: h });
-      tableY = 420;
-    } else {
-      page.drawText('Source preview unavailable - use the confirmed dimension schedule below.', { x: 36, y: 700, font, size: 9 });
-      tableY = 660;
+    let tableY = 420;
+    const cleanDrawn = drawCompiledGeometry(page, source.compiledGeometry, 36, 445, 523, 295, font, fontBold, rgb);
+    if (!cleanDrawn) {
+      const image = await embedPreview(pdfDoc, source);
+      if (image) {
+        const bounds = image.scale(1);
+        const maxW = 523, maxH = 295;
+        const scale = Math.min(maxW / bounds.width, maxH / bounds.height, 1);
+        const w = bounds.width * scale, h = bounds.height * scale;
+        page.drawRectangle({ x: 36, y: 445, width: 523, height: 295, borderWidth: 0.5, borderColor: rgb(0.75, 0.75, 0.75) });
+        page.drawImage(image, { x: 36 + (523 - w) / 2, y: 445 + (295 - h) / 2, width: w, height: h });
+      } else {
+        page.drawText('Clean geometry preview unavailable - release must remain blocked.', { x: 36, y: 700, font: fontBold, size: 9 });
+        tableY = 660;
+      }
     }
 
     const remainingY = drawDimensionTable(page, source, font, fontBold, tableY);

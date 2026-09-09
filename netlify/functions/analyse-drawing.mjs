@@ -1,9 +1,10 @@
 import OpenAI from 'openai';
 import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
 import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA } from './_quick-dxf-analysis.mjs';
-import { keyShape, normaliseApiKey, probeOpenAIAuth } from './_openai-auth.mjs';
+import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../lib/openai-auth.mjs';
 
 const MODEL = 'gpt-5.6-sol';
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const env = (key) => Netlify.env.get(key) || '';
 
 function base64(bytes) {
@@ -49,7 +50,9 @@ export default async (request) => {
   const filename = String(metadata?.metadata?.filename || body?.filename || fileId);
   const bytes = await new Response(stream).arrayBuffer();
 
-  const openai = new OpenAI({ apiKey, maxRetries: 0, timeout: 120_000 });
+  // Netlify AI Gateway injects OPENAI_BASE_URL automatically. Quick DXF uses its
+  // own OpenAI project key, so pin the official API endpoint explicitly.
+  const openai = new OpenAI({ apiKey, baseURL: OPENAI_BASE_URL, maxRetries: 0, timeout: 120_000 });
   let uploadedFile;
   let sourcePart;
 

@@ -16,33 +16,39 @@ jobs:
     env:
       BASE_URL: https://sapiver-draw-dxf.netlify.app
     steps:
-      - uses: actions/checkout@v4
-      - name: Upload benchmark drawing to live shared storage
-        id: upload
+      - name: Resolve most recent saved drawing
+        id: source
         shell: bash
         run: |
-          JOB_ID="smoke${GITHUB_RUN_ID}"
-          FILE_ID="drawing.png"
-          ENDPOINT="$BASE_URL/.netlify/functions/job-file?job=$JOB_ID&revision=1&file=$FILE_ID"
-          BODY=$(curl --fail-with-body -sS -X PUT "$ENDPOINT" \
-            -H 'content-type: image/png' \
-            -H 'x-file-name: hand-drawn-counter-sketch-clean.png' \
-            -H 'x-file-kind: smoke-test' \
-            --data-binary @run-tests/hand-drawn-counter-sketch-clean.png)
-          echo "$BODY"
-          FILE_KEY=$(printf '%s' "$BODY" | jq -r '.fileKey')
-          test -n "$FILE_KEY" && test "$FILE_KEY" != "null"
+          curl --fail-with-body -sS "$BASE_URL/.netlify/functions/jobs?q=" -o /tmp/jobs.json
+          JOB_ID=$(jq -r '.jobs[0].id // empty' /tmp/jobs.json)
+          test -n "$JOB_ID"
+          curl --fail-with-body -sS "$BASE_URL/.netlify/functions/jobs?id=$JOB_ID" -o /tmp/job.json
+          JOB_REF=$(jq -r '.job.jobRef // .job.id' /tmp/job.json)
+          REVISION=$(jq -r '.job.revision // 1' /tmp/job.json)
+          FILE_ID=$(jq -r '.job.sources[] | select(.fileKey != null) | .fileId' /tmp/job.json | head -n1)
+          FILE_KEY=$(jq -r '.job.sources[] | select(.fileKey != null) | .fileKey' /tmp/job.json | head -n1)
+          CONTENT_TYPE=$(jq -r '.job.sources[] | select(.fileKey != null) | .contentType' /tmp/job.json | head -n1)
+          FILENAME=$(jq -r '.job.sources[] | select(.fileKey != null) | .name' /tmp/job.json | head -n1)
+          test -n "$FILE_ID" && test -n "$FILE_KEY"
+          echo "Testing latest saved job: $JOB_REF, revision $REVISION, source $FILENAME"
           echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
           echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
           echo "file_key=$FILE_KEY" >> "$GITHUB_OUTPUT"
-      - name: Analyse benchmark through live Netlify function
+          echo "content_type=$CONTENT_TYPE" >> "$GITHUB_OUTPUT"
+          echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
+      - name: Analyse saved drawing through live Netlify function
         shell: bash
         run: |
           PAYLOAD=$(jq -nc \
-            --arg jobId '${{ steps.upload.outputs.job_id }}' \
-            --arg fileId '${{ steps.upload.outputs.file_id }}' \
-            --arg fileKey '${{ steps.upload.outputs.file_key }}' \
-            '{jobId:$jobId,revision:1,fileId:$fileId,fileKey:$fileKey,contentType:"image/png",filename:"hand-drawn-counter-sketch-clean.png"}')
+            --arg jobId '${{ steps.source.outputs.job_id }}' \
+            --argjson revision '${{ steps.source.outputs.revision }}' \
+            --arg fileId '${{ steps.source.outputs.file_id }}' \
+            --arg fileKey '${{ steps.source.outputs.file_key }}' \
+            --arg contentType '${{ steps.source.outputs.content_type }}' \
+            --arg filename '${{ steps.source.outputs.filename }}' \
+            '{jobId:$jobId,revision:$revision,fileId:$fileId,fileKey:$fileKey,contentType:$contentType,filename:$filename}')
           HTTP=$(curl -sS -o /tmp/analysis.json -w '%{http_code}' -X POST "$BASE_URL/.netlify/functions/analyse-drawing" \
             -H 'content-type: application/json' \
             --data "$PAYLOAD")
@@ -52,12 +58,3 @@ jobs:
             exit 1
           fi
           jq -e '.ok == true and (.extraction.dimensions | length) > 0' /tmp/analysis.json >/dev/null
-      - name: Remove smoke-test drawing
-        if: always()
-        shell: bash
-        run: |
-          JOB_ID='${{ steps.upload.outputs.job_id }}'
-          FILE_ID='${{ steps.upload.outputs.file_id }}'
-          if [ -n "$JOB_ID" ] && [ -n "$FILE_ID" ]; then
-            curl -sS -X DELETE "$BASE_URL/.netlify/functions/job-file?job=$JOB_ID&revision=1&file=$FILE_ID" >/dev/null || true
-          fi

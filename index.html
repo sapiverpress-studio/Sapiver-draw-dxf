@@ -72,7 +72,7 @@
         <div>
           <p class="eyebrow">3 · Confirm</p>
           <h1 id="activeSourceTitle">Select a drawing</h1>
-          <p id="activeSourceMeta" class="helper">AI proposes the values; every production dimension is then deliberately confirmed by the assistant/customer.</p>
+          <p id="activeSourceMeta" class="helper">AI proposes the geometry; the assistant/customer confirms each production parameter against the source.</p>
         </div>
         <span id="reviewProgress" class="counter">0 / 0 confirmed</span>
       </div>
@@ -89,10 +89,10 @@
           <div>
             <p class="preview-label">Clean confirmed geometry</p>
             <div class="drawing-preview-wrap geometry-preview-wrap">
-              <img id="geometryPreview" alt="Confirmed deterministic geometry" hidden>
-              <div id="geometryPlaceholder" class="drawing-placeholder">Confirm dimensions to build geometry</div>
+              <img id="geometryPreview" alt="Confirmed digital drawing" hidden>
+              <div id="geometryPlaceholder" class="drawing-placeholder">Confirmed measurements will build the digital drawing</div>
             </div>
-            <div id="geometryState" class="ai-state geometry-state">Clean geometry will appear after confirmation.</div>
+            <div id="geometryState" class="ai-state geometry-state">Clean geometry will update as measurements are confirmed.</div>
           </div>
         </div>
         <div class="dimension-side">
@@ -101,7 +101,7 @@
             <button id="analyseBtn" class="button" type="button" disabled>Analyse again</button>
           </div>
           <div id="dimensionList" class="dimension-list"></div>
-          <div id="dimensionEmpty" class="dimension-empty">No proposed dimensions yet.</div>
+          <div id="dimensionEmpty" class="dimension-empty">No proposed production parameters yet.</div>
           <button id="addCorrectionBtn" class="button quiet full" type="button" disabled>Add / correct dimension</button>
         </div>
       </div>
@@ -112,7 +112,7 @@
         <div>
           <p class="eyebrow">4 · Customer confirmation</p>
           <h1>Confirmation PDF and signed proof</h1>
-          <p class="helper">Create the confirmation PDF after every drawing dimension is confirmed. Print it, obtain the customer's signature, then photograph the signed sheet back into this job.</p>
+          <p class="helper">Create the confirmation PDF after every required production parameter is confirmed. Print it, obtain the customer's signature, then photograph the signed sheet back into this job.</p>
         </div>
       </div>
       <div class="approval-actions">
@@ -136,35 +136,10 @@
     </section>
   </main>
 
-  <template id="dimensionTemplate">
-    <article class="dimension-row">
-      <div class="dimension-main">
-        <input class="dimension-label" type="text" aria-label="Dimension description">
-        <div class="dimension-value-wrap"><input class="dimension-value" type="number" min="0" step="0.01" inputmode="decimal"><span>mm</span></div>
-      </div>
-      <div class="dimension-ref-wrap">
-        <select class="dimension-ref" aria-label="Dimension reference">
-          <option value="size">Size / overall</option>
-          <option value="centre">Centre</option>
-          <option value="edge">Edge</option>
-          <option value="unknown">Unknown</option>
-        </select>
-        <select class="dimension-from-edge" aria-label="Measured from outer edge">
-          <option value="unknown">From edge: not applicable / unknown</option>
-          <option value="left">From left</option>
-          <option value="right">From right</option>
-          <option value="top">From top</option>
-          <option value="bottom">From bottom</option>
-        </select>
-        <button class="dimension-confirm button" type="button">Confirm</button>
-      </div>
-    </article>
-  </template>
-
   <footer>
-    Production rule: AI proposes. A human confirms every production dimension. Signed revisions are immutable. Release packs are shared from the device to email, Drive or another destination; the work server remains the permanent archive.
+    Production rule: AI proposes. A human confirms every production parameter. Signed revisions are immutable. Release packs are shared from the device to email, Drive or another destination; the work server remains the permanent archive.
   </footer>
   <script type="module" src="./share-release.js"></script>
-  <script type="module" src="./app-v4.js"></script>
+  <script type="module" src="./app-v5.js"></script>
 </body>
 </html>

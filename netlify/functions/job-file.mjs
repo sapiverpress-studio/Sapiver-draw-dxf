@@ -1,4 +1,5 @@
 import { fileKey, jobRevisionKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
+import { requireAuth } from '../lib/access-auth.mjs';
 
 const MAX_BYTES = 12_000_000;
 const ALLOWED = new Set([
@@ -13,6 +14,8 @@ async function assertRevisionWritable(s, jobId, revision) {
 }
 
 export default async (request) => {
+  const denied = requireAuth(request, json);
+  if (denied) return denied;
   const url = new URL(request.url);
   const jobId = safeId(url.searchParams.get('job'));
   const revision = Math.max(1, Number(url.searchParams.get('revision')) || 1);

@@ -43,9 +43,13 @@ assert.ok(Math.abs(Math.max(...xs) - 1080) < 0.001, 'right-edge reference must l
 assert.ok(Math.abs(Math.max(...ys) - 560) < 0.001, 'top-edge reference must locate slot near edge at 40 mm from top');
 
 const dxf = buildDxf(geometry.parts[0].entities);
-assert.match(dxf, /\nCIRCLE\n/, 'circular hole must use a DXF CIRCLE entity');
-assert.match(dxf, /\nLWPOLYLINE\n/, 'outer profile and cutouts must use polylines');
-assert.match(dxf, /\n4\n/, 'DXF units must be millimetres');
+assert.match(dxf, /\r\nCIRCLE\r\n/, 'circular hole must use a DXF CIRCLE entity');
+assert.match(dxf, /\r\nPOLYLINE\r\n/, 'outer profile and cutouts must use R12 polylines');
+assert.match(dxf, /\r\nVERTEX\r\n/, 'R12 polylines must contain legacy VERTEX entities');
+assert.doesNotMatch(dxf, /LWPOLYLINE|AcDb/, 'R12 output must not contain AutoCAD 2000 entity records');
+assert.match(dxf, /\r\nAC1009\r\n/, 'DXF must use the GstarCAD-tested AutoCAD R12 version');
+assert.match(dxf, /\r\n4\r\n/, 'DXF units must be millimetres');
+assert.ok(!/(^|[^\r])\n/.test(dxf), 'DXF must use Windows CRLF line endings');
 
 const unsafe = structuredClone(source);
 unsafe.dimensions.find((d) => d.id === 'hole-x').fromEdge = 'unknown';

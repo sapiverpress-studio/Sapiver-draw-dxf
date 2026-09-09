@@ -45,3 +45,13 @@ export async function deleteDraftJob(store, id) {
   await store.delete(headKey);
   return { restoredJob: null };
 }
+
+export async function purgeStoredJob(store, id) {
+  const headKey = jobHeadKey(id);
+  const head = await store.get(headKey, { type: 'json' });
+  if (!head) return { error: 'Job not found.', status: 404 };
+  await deletePrefix(store, `jobs/${id}/`);
+  await deletePrefix(store, `files/${id}/`);
+  await store.delete(headKey);
+  return { deleted: true };
+}

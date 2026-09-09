@@ -23,7 +23,7 @@ jobs:
         run: npm install --no-save --ignore-scripts puppeteer-core@24
       - name: Exercise live site in Chrome
         run: |
-          cat > /tmp/browser-smoke.mjs <<'NODE'
+          cat > browser-smoke.mjs <<'NODE'
           import puppeteer from 'puppeteer-core';
           import fs from 'node:fs';
 
@@ -57,4 +57,4 @@ jobs:
           if (state.badge === 'Shared storage: checking') process.exit(3);
           if (!state.date) process.exit(4);
           NODE
-          node /tmp/browser-smoke.mjs
+          node browser-smoke.mjs

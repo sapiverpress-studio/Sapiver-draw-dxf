@@ -1,6 +1,7 @@
 import { buildConfirmationPdf } from './core/confirmation-pdf.js';
 import { compileSourceGeometry } from './core/geometry.js';
 import { buildDxf } from './core/dxf.js';
+import { saveZip, zipFromRefs } from './core/zip.js';
 import {
   geometrySlots,
   slotByKey,
@@ -908,7 +909,31 @@ function renderRelease() {
     const refs = state.status === 'locked'
       ? [...state.dxfFiles, state.confirmationPdf, state.outcome === 'production' ? state.signedProof : null].filter(Boolean)
       : [];
-    for (const ref of refs) {
+    if (state.dxfFiles.length) {
+      const zipButton = document.createElement('button');
+      zipButton.type = 'button';
+      zipButton.className = 'button primary full';
+      zipButton.textContent = `Download DXF ZIP · ${state.dxfFiles.length} drawing${state.dxfFiles.length === 1 ? '' : 's'}`;
+      zipButton.addEventListener('click', async () => {
+        zipButton.disabled = true;
+        zipButton.textContent = 'Preparing DXF ZIP…';
+        try {
+          const bytes = await zipFromRefs(state.dxfFiles);
+          const safeJob = (els.jobRef.value.trim() || state.id).replace(/[^A-Za-z0-9_-]+/g, '-');
+          saveZip(bytes, `${safeJob}-r${state.revision}-DXF.zip`);
+          els.releaseMessage.textContent = 'DXF ZIP downloaded. Extract it in Android Files, then open the DXF in your CAD app.';
+          els.releaseMessage.classList.remove('error');
+        } catch (error) {
+          els.releaseMessage.textContent = `DXF ZIP failed: ${error.message}`;
+          els.releaseMessage.classList.add('error');
+        } finally {
+          zipButton.disabled = false;
+          zipButton.textContent = `Download DXF ZIP · ${state.dxfFiles.length} drawing${state.dxfFiles.length === 1 ? '' : 's'}`;
+        }
+      });
+      els.releaseDownloads.appendChild(zipButton);
+    }
+    for (const ref of refs.filter((item) => !/\.dxf$/i.test(item.name))) {
       const link = document.createElement('a');
       link.className = 'button quiet full';
       link.href = ref.url;

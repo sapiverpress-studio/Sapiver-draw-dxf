@@ -1,3 +1,5 @@
+import { buildStoredZip, saveZip } from './core/zip.js';
+
 const CACHE_KEY = 'quick-dxf-unsynced-v1';
 
 function getCachedJob() {
@@ -43,17 +45,10 @@ export function releaseRefs(job) {
 }
 
 export function downloadFiles(files) {
-  for (const file of files) {
-    const url = URL.createObjectURL(file);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = file.name;
-    link.hidden = true;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-  }
+  return Promise.all(files.map((file) => file.arrayBuffer())).then((buffers) => {
+    const entries = files.map((file, index) => ({ name: file.name, data: new Uint8Array(buffers[index]) }));
+    saveZip(buildStoredZip(entries), 'Quick-DXF-release-pack.zip');
+  });
 }
 
 export async function shareCurrentJob() {
@@ -82,12 +77,12 @@ export async function shareCurrentJob() {
       return { mode: 'share', fileCount: files.length };
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
-      downloadFiles(files);
+      await downloadFiles(files);
       return { mode: 'download-fallback', fileCount: files.length };
     }
   }
 
-  downloadFiles(files);
+  await downloadFiles(files);
   return { mode: 'download', fileCount: files.length };
 }
 

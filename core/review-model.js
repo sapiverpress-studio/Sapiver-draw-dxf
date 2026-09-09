@@ -10,9 +10,19 @@ function nearlyEqual(a, b, tolerance = 0.01) {
 
 function featureName(feature, index) {
   const raw = String(feature?.id || '').trim();
-  if (raw) return raw.toUpperCase();
-  const base = feature?.type === 'circular_hole' ? 'Hole' : feature?.type === 'slot' ? 'Slot' : 'Cut-out';
+  if (raw && !/^f\d+$/i.test(raw)) return raw;
+  const base = feature?.type === 'circular_hole' ? 'Circular hole'
+    : feature?.type === 'slot' ? 'Slot'
+      : feature?.type === 'rectangular_cutout' ? 'Rectangular cut-out'
+        : feature?.type === 'notch' ? 'Notch' : 'Cut-out';
   return `${base} ${index + 1}`;
+}
+
+function featureLocationHint(feature) {
+  const hints = [];
+  if (finitePositive(feature?.x_mm) && ['left', 'right'].includes(feature?.x_from_edge)) hints.push(`${Number(feature.x_mm)} mm from ${feature.x_from_edge}`);
+  if (finitePositive(feature?.y_mm) && ['top', 'bottom'].includes(feature?.y_from_edge)) hints.push(`${Number(feature.y_mm)} mm from ${feature.y_from_edge}`);
+  return hints.length ? ` · proposed ${hints.join(', ')}` : '';
 }
 
 function partName(part, index) {
@@ -32,7 +42,7 @@ function pushProfileSlots(slots, part, partIndex) {
 
 function pushFeatureSlots(slots, part, partIndex, feature, featureIndex) {
   const name = featureName(feature, featureIndex);
-  const common = { partIndex, featureIndex, section: `${partName(part, partIndex)} · ${name}`, ownerType: 'feature', featureType: feature.type };
+  const common = { partIndex, featureIndex, section: `${partName(part, partIndex)} · ${name}${featureLocationHint(feature)}`, ownerType: 'feature', featureType: feature.type };
   if (['rectangular_cutout', 'slot', 'notch', 'other'].includes(feature.type)) {
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:width`, parameter: 'width', field: 'width_dimension_id', valueField: 'width_mm', kind: 'size', label: `${name} width` });
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:height`, parameter: 'height', field: 'height_dimension_id', valueField: 'height_mm', kind: 'size', label: `${name} height` });
@@ -194,7 +204,8 @@ function markerDef() {
 }
 
 function text(chunks, x, y, value, opts = '') {
-  chunks.push(`<text x="${x}" y="${y}" font-family="system-ui,sans-serif" font-size="14" fill="#101828" ${opts}>${esc(value)}</text>`);
+  const size = /(?:^|\s)font-size=/.test(opts) ? '' : 'font-size="14"';
+  chunks.push(`<text x="${x}" y="${y}" font-family="system-ui,sans-serif" ${size} fill="#101828" ${opts}>${esc(value)}</text>`);
 }
 
 function line(chunks, x1, y1, x2, y2, arrows = false) {

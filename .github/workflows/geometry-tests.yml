@@ -8,6 +8,7 @@ on:
       - 'core/**'
       - 'tests/**'
       - 'app-v4.js'
+      - 'share-release.js'
       - 'index.html'
       - 'job-v4.css'
       - 'netlify/functions/**'
@@ -31,11 +32,14 @@ jobs:
       - name: Check JavaScript syntax
         run: |
           node --check app-v4.js
+          node --check share-release.js
           node --check core/dxf.js
           node --check core/geometry.js
           node --check core/confirmation-pdf.js
           for file in netlify/functions/*.mjs; do node --check "$file"; done
       - name: Run deterministic geometry tests
         run: node tests/geometry.test.mjs
+      - name: Run native share pack tests
+        run: node tests/release-share.test.mjs
       - name: Check browser UI contract
         run: node tests/ui-contract.test.mjs

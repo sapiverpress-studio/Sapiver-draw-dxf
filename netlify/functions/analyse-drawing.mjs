@@ -15,6 +15,16 @@ function resolveStoredFileKey(jobId, revision, fileId, suppliedKey) {
   return fileKey(jobId, revision, fileId);
 }
 
+function publicOpenAIError(error) {
+  const status = Number(error?.status) || null;
+  const code = String(error?.code || error?.error?.code || '').trim();
+  const type = String(error?.type || error?.error?.type || '').trim();
+  const message = String(error?.message || error || 'Unknown OpenAI error').replace(/\s+/g, ' ').trim().slice(0, 700);
+  const prefix = status ? `OpenAI ${status}` : 'OpenAI request failed';
+  const meta = [code, type].filter(Boolean).join(' / ');
+  return `${prefix}${meta ? ` (${meta})` : ''}: ${message}`;
+}
+
 export default async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
   const apiKey = env('QUICK_DXF_API');
@@ -94,8 +104,9 @@ export default async (request) => {
       extraction,
     });
   } catch (error) {
-    console.error('Quick DXF analysis failed', error);
-    return json({ error: 'Drawing analysis failed. No production data was approved.', detail: String(error?.message || error) }, 502);
+    const detail = publicOpenAIError(error);
+    console.error('Quick DXF analysis failed', { detail, status: error?.status, code: error?.code, requestId: error?.request_id });
+    return json({ error: `Drawing analysis failed. ${detail}`, requestId: error?.request_id || null }, 502);
   } finally {
     if (uploadedFile?.id) {
       try { await openai.files.delete(uploadedFile.id); } catch (error) { console.warn('Could not delete temporary OpenAI file', error); }

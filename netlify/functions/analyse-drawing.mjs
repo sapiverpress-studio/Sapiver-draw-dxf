@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
 import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA } from './_quick-dxf-analysis.mjs';
+import { keyShape, normaliseApiKey, probeOpenAIAuth } from './_openai-auth.mjs';
 
 const MODEL = 'gpt-5.6-sol';
 const env = (key) => Netlify.env.get(key) || '';
@@ -27,7 +28,8 @@ function publicOpenAIError(error) {
 
 export default async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
-  const apiKey = env('QUICK_DXF_API');
+  const rawApiKey = env('QUICK_DXF_API');
+  const apiKey = normaliseApiKey(rawApiKey);
   if (!apiKey) return json({ error: 'QUICK_DXF_API is not configured on the server.' }, 503);
 
   let body;
@@ -105,8 +107,35 @@ export default async (request) => {
     });
   } catch (error) {
     const detail = publicOpenAIError(error);
-    console.error('Quick DXF analysis failed', { detail, status: error?.status, code: error?.code, requestId: error?.request_id });
-    return json({ error: `Drawing analysis failed. ${detail}`, requestId: error?.request_id || null }, 502);
+    const status = Number(error?.status) || null;
+    let auth = null;
+
+    if (status === 401) {
+      const probe = await probeOpenAIAuth(apiKey);
+      auth = {
+        key: keyShape(rawApiKey),
+        sdkStatus: status,
+        directProbe: probe,
+      };
+    }
+
+    console.error('Quick DXF analysis failed', {
+      detail,
+      status,
+      code: error?.code,
+      requestId: error?.request_id,
+      auth,
+    });
+
+    const authSummary = auth
+      ? ` Direct authentication probe: ${auth.directProbe.status ?? 'no status'}${auth.directProbe.code ? ` (${auth.directProbe.code})` : ''}.`
+      : '';
+
+    return json({
+      error: `Drawing analysis failed. ${detail}${authSummary}`,
+      requestId: error?.request_id || null,
+      auth,
+    }, 502);
   } finally {
     if (uploadedFile?.id) {
       try { await openai.files.delete(uploadedFile.id); } catch (error) { console.warn('Could not delete temporary OpenAI file', error); }

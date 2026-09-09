@@ -2,7 +2,7 @@ name: Quick DXF demo v5 checks
 
 on:
   push:
-    branches: [demo-v5]
+    branches: [demo-v5, fix/android-drawing-share-labels]
   workflow_dispatch:
 
 permissions:

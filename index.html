@@ -14,7 +14,7 @@
   <header class="topbar">
     <div>
       <div class="brand">Quick DXF</div>
-      <div class="subbrand">Capture → AI proposal → confirm → sign → production</div>
+      <div class="subbrand">Capture → AI proposal → confirm → sign → share</div>
     </div>
     <div class="top-status">
       <span id="storageBadge" class="badge neutral">Shared storage: checking</span>
@@ -36,7 +36,7 @@
       <div class="job-grid">
         <label>Job reference<input id="jobRef" type="text" placeholder="e.g. 18437"></label>
         <label>Customer name<input id="customerName" type="text" placeholder="Customer / company"></label>
-        <label>Customer email<input id="customerEmail" type="email" inputmode="email" placeholder="For DXF export"></label>
+        <input id="customerEmail" type="hidden" value="">
         <label>Staff member<input id="staffName" type="text" placeholder="Assistant"></label>
         <label>Date<input id="jobDate" type="date"></label>
       </div>
@@ -127,11 +127,11 @@
     <section class="panel release-panel">
       <div class="section-head"><div><p class="eyebrow">5 · Release</p><h1>Production or customer DXF</h1></div></div>
       <div class="release-grid">
-        <button id="productionBtn" class="release-choice" type="button" disabled><strong>Approve for manufacture</strong><span>Generate DXF files, lock the signed revision and prepare the production pack.</span></button>
-        <button id="exportChoiceBtn" class="release-choice" type="button" disabled><strong>Approve customer DXF export</strong><span>£5 single drawing · £10 multi-drawing same job.</span></button>
+        <button id="productionBtn" class="release-choice" type="button" disabled><strong>Approve for manufacture</strong><span>Generate DXF files, lock the signed revision and prepare the production share pack.</span></button>
+        <button id="exportChoiceBtn" class="release-choice" type="button" disabled><strong>Approve customer DXF export</strong><span>Prepare the confirmed DXF share pack. £5 single drawing · £10 multi-drawing same job.</span></button>
       </div>
       <div id="dxfState" class="signed-state">DXF files are generated only when the signed revision is released.</div>
-      <button id="sendBtn" class="button primary full send-button" type="button" hidden disabled>Confirm & email</button>
+      <button id="sendBtn" class="button primary full send-button" type="button" hidden disabled>Share job pack</button>
       <p id="releaseMessage" class="helper release-message">Add drawings and complete confirmation before release.</p>
     </section>
   </main>
@@ -162,8 +162,9 @@
   </template>
 
   <footer>
-    Production rule: AI proposes. A human confirms every production dimension. Signed revisions are immutable. Sent jobs are permanently archived on the work server, not in this app.
+    Production rule: AI proposes. A human confirms every production dimension. Signed revisions are immutable. Release packs are shared from the device to email, Drive or another destination; the work server remains the permanent archive.
   </footer>
+  <script type="module" src="./share-release.js"></script>
   <script type="module" src="./app-v4.js"></script>
 </body>
 </html>

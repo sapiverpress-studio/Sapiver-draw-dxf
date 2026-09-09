@@ -21,12 +21,8 @@ jobs:
           node-version: '22'
       - name: Install browser driver only
         run: npm install --no-save --ignore-scripts puppeteer-core@24
-      - name: Exercise prototype page in Chrome
+      - name: Exercise fixed live site in Chrome
         run: |
-          python3 -m http.server 4173 >/tmp/quick-dxf-http.log 2>&1 &
-          SERVER_PID=$!
-          trap 'kill $SERVER_PID || true' EXIT
-          sleep 1
           cat > browser-smoke.mjs <<'NODE'
           import puppeteer from 'puppeteer-core';
           import fs from 'node:fs';
@@ -41,21 +37,34 @@ jobs:
           page.on('console', (msg) => console.log(`console.${msg.type()}: ${msg.text()}`));
           page.on('pageerror', (err) => { errors.push(String(err)); console.log(`PAGEERROR: ${err}`); });
           page.on('requestfailed', (req) => console.log(`REQUESTFAILED: ${req.url()} :: ${req.failure()?.errorText}`));
-          const response = await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 15000 });
+
+          const response = await page.goto('https://sapiver-draw-dxf.netlify.app/?browser-smoke=postfix', { waitUntil: 'domcontentloaded', timeout: 20000 });
           console.log(`HTTP: ${response?.status()}`);
-          await new Promise((r) => setTimeout(r, 1500));
-          const state = await page.evaluate(() => ({
+          await new Promise((r) => setTimeout(r, 3500));
+
+          const before = await page.evaluate(() => ({
             badge: document.querySelector('#storageBadge')?.textContent?.trim(),
             date: document.querySelector('#jobDate')?.value,
-            newJobText: document.querySelector('#newJobBtn')?.textContent?.trim(),
             shareText: document.querySelector('#sendBtn')?.textContent?.trim(),
+            jobRef: document.querySelector('#jobRef')?.value,
             ready: document.readyState,
           }));
-          console.log('STATE', JSON.stringify(state));
+          console.log('STATE_BEFORE', JSON.stringify(before));
+
+          await page.click('#newJobBtn');
+          await page.type('#jobRef', 'browser-smoke-check');
+          const after = await page.evaluate(() => ({
+            jobRef: document.querySelector('#jobRef')?.value,
+            date: document.querySelector('#jobDate')?.value,
+            badge: document.querySelector('#storageBadge')?.textContent?.trim(),
+          }));
+          console.log('STATE_AFTER', JSON.stringify(after));
+
           await browser.close();
           if (errors.length) process.exit(2);
-          if (state.badge === 'Shared storage: checking') process.exit(3);
-          if (!state.date) process.exit(4);
-          if (state.shareText !== 'Share job pack') process.exit(5);
+          if (before.badge !== 'Shared storage: online') process.exit(3);
+          if (!before.date) process.exit(4);
+          if (before.shareText !== 'Share job pack') process.exit(5);
+          if (after.jobRef !== 'browser-smoke-check') process.exit(6);
           NODE
           node browser-smoke.mjs

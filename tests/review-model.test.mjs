@@ -56,3 +56,4 @@ source.dimensions.push({ id:'manual-blank', label:'Correction / added dimension'
 assert.equal(reviewStats(source).total, 6, 'unlinked manual reads must not expand required production confirmation');
 
 console.log('review-model tests passed');
+// Full demo-v5 suite rerun after null-slot guard.

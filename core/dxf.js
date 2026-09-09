@@ -8,7 +8,7 @@ function cleanNumber(value) {
 }
 
 function pair(code, value) {
-  return `${code}\n${value}\n`;
+  return `${code}\r\n${value}\r\n`;
 }
 
 function header(layer) {
@@ -16,7 +16,7 @@ function header(layer) {
   dxf += pair(0, 'SECTION');
   dxf += pair(2, 'HEADER');
   dxf += pair(9, '$ACADVER');
-  dxf += pair(1, 'AC1015');
+  dxf += pair(1, 'AC1009');
   dxf += pair(9, '$INSUNITS');
   dxf += pair(70, 4);
   dxf += pair(0, 'ENDSEC');
@@ -41,16 +41,19 @@ function polylineEntity(entity, layer) {
   const points = entity.points;
   if (!Array.isArray(points) || points.length < 2) throw new Error('Polyline requires at least two vertices');
   let dxf = '';
-  dxf += pair(0, 'LWPOLYLINE');
-  dxf += pair(100, 'AcDbEntity');
+  dxf += pair(0, 'POLYLINE');
   dxf += pair(8, layer);
-  dxf += pair(100, 'AcDbPolyline');
-  dxf += pair(90, points.length);
+  dxf += pair(66, 1);
   dxf += pair(70, entity.closed === false ? 0 : 1);
   for (const p of points) {
+    dxf += pair(0, 'VERTEX');
+    dxf += pair(8, layer);
     dxf += pair(10, cleanNumber(p.x));
     dxf += pair(20, cleanNumber(p.y));
+    dxf += pair(30, 0);
   }
+  dxf += pair(0, 'SEQEND');
+  dxf += pair(8, layer);
   return dxf;
 }
 
@@ -58,9 +61,7 @@ function circleEntity(entity, layer) {
   if (!(Number(entity.r) > 0)) throw new Error('Circle radius must be positive');
   let dxf = '';
   dxf += pair(0, 'CIRCLE');
-  dxf += pair(100, 'AcDbEntity');
   dxf += pair(8, layer);
-  dxf += pair(100, 'AcDbCircle');
   dxf += pair(10, cleanNumber(entity.cx));
   dxf += pair(20, cleanNumber(entity.cy));
   dxf += pair(30, 0);
@@ -70,8 +71,13 @@ function circleEntity(entity, layer) {
 
 function arcEntity(entity, layer) {
   if (!(Number(entity.r) > 0)) throw new Error('Arc radius must be positive');
-  let dxf = circleEntity({ ...entity, type: 'circle' }, layer).replace(/^0\nCIRCLE\n/, '0\nARC\n');
-  dxf += pair(100, 'AcDbArc');
+  let dxf = '';
+  dxf += pair(0, 'ARC');
+  dxf += pair(8, layer);
+  dxf += pair(10, cleanNumber(entity.cx));
+  dxf += pair(20, cleanNumber(entity.cy));
+  dxf += pair(30, 0);
+  dxf += pair(40, cleanNumber(entity.r));
   dxf += pair(50, cleanNumber(entity.startDeg));
   dxf += pair(51, cleanNumber(entity.endDeg));
   return dxf;
@@ -97,7 +103,7 @@ export function buildCutDxf(polylines, { layer = 'CUT' } = {}) {
 }
 
 export function downloadTextFile(text, filename, mime = 'application/dxf') {
-  const blob = new Blob([text], { type: `${mime};charset=utf-8` });
+  const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;

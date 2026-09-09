@@ -1,0 +1,60 @@
+name: Quick DXF live browser smoke
+
+on:
+  push:
+    branches: [prototype-v1]
+    paths:
+      - '.github/workflows/live-browser-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser driver only
+        run: npm install --no-save --ignore-scripts puppeteer-core@24
+      - name: Exercise live site in Chrome
+        run: |
+          cat > /tmp/browser-smoke.mjs <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import fs from 'node:fs';
+
+          const candidates = [
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+          ];
+          const executablePath = candidates.find((p) => fs.existsSync(p));
+          if (!executablePath) throw new Error('No Chrome/Chromium executable found');
+
+          const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox'] });
+          const page = await browser.newPage();
+          const errors = [];
+          page.on('console', (msg) => console.log(`console.${msg.type()}: ${msg.text()}`));
+          page.on('pageerror', (err) => { errors.push(String(err)); console.log(`PAGEERROR: ${err}`); });
+          page.on('requestfailed', (req) => console.log(`REQUESTFAILED: ${req.url()} :: ${req.failure()?.errorText}`));
+          const response = await page.goto('https://sapiver-draw-dxf.netlify.app/?browser-smoke=1', { waitUntil: 'networkidle2', timeout: 60000 });
+          console.log(`HTTP: ${response?.status()}`);
+          await new Promise((r) => setTimeout(r, 3000));
+          const state = await page.evaluate(() => ({
+            badge: document.querySelector('#storageBadge')?.textContent?.trim(),
+            date: document.querySelector('#jobDate')?.value,
+            saveDisabled: document.querySelector('#saveJobBtn')?.disabled,
+            bodyReady: document.readyState,
+          }));
+          console.log('STATE', JSON.stringify(state));
+          await browser.close();
+          if (errors.length) process.exit(2);
+          if (state.badge === 'Shared storage: checking') process.exit(3);
+          if (!state.date) process.exit(4);
+          NODE
+          node /tmp/browser-smoke.mjs

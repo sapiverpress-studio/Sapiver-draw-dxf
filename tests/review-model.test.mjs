@@ -39,15 +39,16 @@ source.dimensions.find((d) => d.id === 'd2').confirmed = true;
 let svg = reviewDrawingSvg(source);
 assert.match(svg, /1500 mm/);
 assert.match(svg, /500 mm/);
-assert.doesNotMatch(svg, /F1 130 mm/);
+assert.doesNotMatch(svg, /Rectangular cut-out 1 130 mm/);
 assert.equal(reviewStats(source).confirmed, 2);
 
 for (const d of source.dimensions) d.confirmed = true;
 svg = reviewDrawingSvg(source);
-assert.match(svg, /F1 130 mm/);
+assert.match(svg, /Rectangular cut-out 1 130 mm/);
 assert.match(svg, /200 mm edge from left/);
 assert.match(svg, /100 mm edge from bottom/);
 assert.equal(reviewStats(source).confirmed, 6);
+assert.doesNotMatch(svg, /font-size="14"[^>]*font-size=/, 'SVG text elements must not contain duplicate font-size attributes');
 const geometry = compileSourceGeometry(source);
 assert.equal(geometry.ok, true, geometry.errors?.join('\n'));
 assert.equal(geometry.parts.length, 1);

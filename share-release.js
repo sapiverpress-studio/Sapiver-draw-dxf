@@ -42,7 +42,7 @@ export function releaseRefs(job) {
   return refs;
 }
 
-function downloadFiles(files) {
+export function downloadFiles(files) {
   for (const file of files) {
     const url = URL.createObjectURL(file);
     const link = document.createElement('a');
@@ -77,8 +77,14 @@ export async function shareCurrentJob() {
   };
 
   if (navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
-    await navigator.share(shareData);
-    return { mode: 'share', fileCount: files.length };
+    try {
+      await navigator.share(shareData);
+      return { mode: 'share', fileCount: files.length };
+    } catch (error) {
+      if (error?.name === 'AbortError') throw error;
+      downloadFiles(files);
+      return { mode: 'download-fallback', fileCount: files.length };
+    }
   }
 
   downloadFiles(files);
@@ -116,7 +122,7 @@ function installBrowserShareHandler() {
       const result = await shareCurrentJob();
       setReleaseMessage(result.mode === 'share'
         ? `Share sheet opened with ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'}. The revision remains locked in Quick DXF.`
-        : `This browser cannot share these files directly. ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'} downloaded instead.`);
+        : `Device sharing was unavailable. ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'} downloaded instead; direct download buttons remain available below.`);
     } catch (error) {
       if (error?.name === 'AbortError') setReleaseMessage('Share cancelled. The locked revision is unchanged.');
       else setReleaseMessage(`Share failed: ${error?.message || error}`, 'error');

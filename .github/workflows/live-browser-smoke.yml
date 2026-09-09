@@ -21,44 +21,41 @@ jobs:
           node-version: '22'
       - name: Install browser driver only
         run: npm install --no-save --ignore-scripts puppeteer-core@24
-      - name: Exercise live site in Chrome
+      - name: Exercise prototype page in Chrome
         run: |
+          python3 -m http.server 4173 >/tmp/quick-dxf-http.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill $SERVER_PID || true' EXIT
+          sleep 1
           cat > browser-smoke.mjs <<'NODE'
           import puppeteer from 'puppeteer-core';
           import fs from 'node:fs';
 
-          const candidates = [
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser',
-          ];
+          const candidates = ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'];
           const executablePath = candidates.find((p) => fs.existsSync(p));
           if (!executablePath) throw new Error('No Chrome/Chromium executable found');
 
           const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox'] });
           const page = await browser.newPage();
           const errors = [];
-          const pending = new Set();
           page.on('console', (msg) => console.log(`console.${msg.type()}: ${msg.text()}`));
           page.on('pageerror', (err) => { errors.push(String(err)); console.log(`PAGEERROR: ${err}`); });
-          page.on('request', (req) => pending.add(req.url()));
-          page.on('requestfinished', (req) => pending.delete(req.url()));
-          page.on('requestfailed', (req) => { pending.delete(req.url()); console.log(`REQUESTFAILED: ${req.url()} :: ${req.failure()?.errorText}`); });
-          const response = await page.goto('https://sapiver-draw-dxf.netlify.app/?browser-smoke=2', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          page.on('requestfailed', (req) => console.log(`REQUESTFAILED: ${req.url()} :: ${req.failure()?.errorText}`));
+          const response = await page.goto('http://127.0.0.1:4173/', { waitUntil: 'domcontentloaded', timeout: 15000 });
           console.log(`HTTP: ${response?.status()}`);
-          await new Promise((r) => setTimeout(r, 5000));
+          await new Promise((r) => setTimeout(r, 1500));
           const state = await page.evaluate(() => ({
             badge: document.querySelector('#storageBadge')?.textContent?.trim(),
             date: document.querySelector('#jobDate')?.value,
-            saveDisabled: document.querySelector('#saveJobBtn')?.disabled,
-            bodyReady: document.readyState,
+            newJobText: document.querySelector('#newJobBtn')?.textContent?.trim(),
+            shareText: document.querySelector('#sendBtn')?.textContent?.trim(),
+            ready: document.readyState,
           }));
           console.log('STATE', JSON.stringify(state));
-          console.log('PENDING', JSON.stringify([...pending]));
           await browser.close();
           if (errors.length) process.exit(2);
           if (state.badge === 'Shared storage: checking') process.exit(3);
           if (!state.date) process.exit(4);
+          if (state.shareText !== 'Share job pack') process.exit(5);
           NODE
           node browser-smoke.mjs

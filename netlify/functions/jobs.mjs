@@ -1,4 +1,5 @@
-import { deleteDraftJob } from '../lib/job-delete.mjs';
+import { checkRateLimit, clearFailures, recordFailure, requireAuth, verifyCode } from '../lib/access-auth.mjs';
+import { deleteDraftJob, purgeStoredJob } from '../lib/job-delete.mjs';
 import { assertRevisionTransition, jobHeadKey, jobRevisionKey, json, safeId, store, summary } from './_quick-dxf-store.mjs';
 
 async function listJobs(s, query) {
@@ -16,7 +17,9 @@ async function listJobs(s, query) {
   return items.slice(0, 100);
 }
 
-export default async (request) => {
+export default async (request, context) => {
+  const denied = requireAuth(request, json);
+  if (denied) return denied;
   const s = store();
   const url = new URL(request.url);
 
@@ -39,6 +42,17 @@ export default async (request) => {
   if (request.method === 'DELETE') {
     const valid = safeId(url.searchParams.get('id'));
     if (!valid) return json({ error: 'Invalid job ID.' }, 400);
+    if (url.searchParams.get('permanent') === 'true') {
+      let body;
+      try { body = await request.json(); } catch { return json({ error: 'Enter the six-digit code to delete permanently.' }, 400); }
+      const rate = await checkRateLimit(s, context?.ip);
+      if (!rate.allowed) return json({ error: 'Too many failed attempts. Try again in 15 minutes.' }, 429);
+      if (!verifyCode(body?.code)) { await recordFailure(s, rate); return json({ error: 'Incorrect access code.' }, 403); }
+      await clearFailures(s, rate);
+      const purged = await purgeStoredJob(s, valid);
+      if (purged.error) return json({ error: purged.error }, purged.status);
+      return json({ ok: true, permanentlyDeleted: true });
+    }
     const result = await deleteDraftJob(s, valid);
     if (result.error) return json({ error: result.error }, result.status);
     return json({ ok: true, deletedDraft: true, restoredJob: result.restoredJob || null });

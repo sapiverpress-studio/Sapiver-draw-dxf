@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { releaseRefs } from '../share-release.js';
+import { downloadFiles, releaseRefs } from '../share-release.js';
 
 const confirmationPdf = { name: 'confirm.pdf', url: '/confirm.pdf' };
 const signedProof = { name: 'signed.jpg', url: '/signed.jpg' };
@@ -19,5 +19,6 @@ assert.deepEqual(
 );
 
 assert.deepEqual(releaseRefs(null), [], 'missing job should produce no share refs');
+assert.equal(typeof downloadFiles, 'function', 'direct download fallback must remain available');
 
 console.log('Quick DXF release sharing contract passed.');

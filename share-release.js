@@ -90,34 +90,38 @@ function removeLegacyEmailLanguage() {
   if (button && button.textContent !== 'Sharing…') button.textContent = 'Share job pack';
   const message = document.querySelector('#releaseMessage');
   if (message?.textContent.includes('Confirm the recipient and email the release pack.')) {
-    message.textContent = `Revision locked. Share the release pack to email, Drive or another destination on this device.`;
+    message.textContent = 'Revision locked. Share the release pack to email, Drive or another destination on this device.';
   }
 }
 
-const observer = new MutationObserver(removeLegacyEmailLanguage);
-observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
-removeLegacyEmailLanguage();
+function installBrowserShareHandler() {
+  const observer = new MutationObserver(removeLegacyEmailLanguage);
+  observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+  removeLegacyEmailLanguage();
 
-document.addEventListener('click', async (event) => {
-  const button = event.target.closest?.('#sendBtn');
-  if (!button) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  if (button.disabled) return;
+  document.addEventListener('click', async (event) => {
+    const button = event.target.closest?.('#sendBtn');
+    if (!button) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (button.disabled) return;
 
-  button.disabled = true;
-  button.textContent = 'Sharing…';
-  setReleaseMessage('Preparing the confirmed release files…');
-  try {
-    const result = await shareCurrentJob();
-    setReleaseMessage(result.mode === 'share'
-      ? `Share sheet opened with ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'}. The revision remains locked in Quick DXF.`
-      : `This browser cannot share these files directly. ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'} downloaded instead.`);
-  } catch (error) {
-    if (error?.name === 'AbortError') setReleaseMessage('Share cancelled. The locked revision is unchanged.');
-    else setReleaseMessage(`Share failed: ${error?.message || error}`, 'error');
-  } finally {
-    button.disabled = false;
-    button.textContent = 'Share job pack';
-  }
-}, true);
+    button.disabled = true;
+    button.textContent = 'Sharing…';
+    setReleaseMessage('Preparing the confirmed release files…');
+    try {
+      const result = await shareCurrentJob();
+      setReleaseMessage(result.mode === 'share'
+        ? `Share sheet opened with ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'}. The revision remains locked in Quick DXF.`
+        : `This browser cannot share these files directly. ${result.fileCount} release file${result.fileCount === 1 ? '' : 's'} downloaded instead.`);
+    } catch (error) {
+      if (error?.name === 'AbortError') setReleaseMessage('Share cancelled. The locked revision is unchanged.');
+      else setReleaseMessage(`Share failed: ${error?.message || error}`, 'error');
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Share job pack';
+    }
+  }, true);
+}
+
+if (typeof document !== 'undefined' && typeof MutationObserver !== 'undefined') installBrowserShareHandler();

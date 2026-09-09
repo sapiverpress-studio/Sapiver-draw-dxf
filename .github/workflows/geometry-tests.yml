@@ -41,5 +41,7 @@ jobs:
         run: node tests/geometry.test.mjs
       - name: Run native share pack tests
         run: node tests/release-share.test.mjs
+      - name: Run OpenAI auth diagnostics tests
+        run: node tests/openai-auth.test.mjs
       - name: Check browser UI contract
         run: node tests/ui-contract.test.mjs

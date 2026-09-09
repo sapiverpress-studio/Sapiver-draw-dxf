@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deleteDraftJob } from '../netlify/lib/job-delete.mjs';
+import { deleteDraftJob, purgeStoredJob } from '../netlify/lib/job-delete.mjs';
 
 class MemoryStore {
   constructor(entries = {}) { this.map = new Map(Object.entries(entries)); }
@@ -45,7 +45,21 @@ class MemoryStore {
   assert.equal((await s.get('heads/job789.json')).revision, 1);
   assert.equal(await s.get('jobs/job789/r2.json'), null);
   assert.equal(await s.get('files/job789/r2/new.jpg'), null);
-  assert.equal(await s.get('files/job789/r1/final.dxf'), 'final');
+assert.equal(await s.get('files/job789/r1/final.dxf'), 'final');
+
+const complete = new MemoryStore({
+  'heads/job999.json': { id:'job999', revision:2, status:'locked' },
+  'jobs/job999/r1.json': { id:'job999', revision:1, status:'locked' },
+  'jobs/job999/r2.json': { id:'job999', revision:2, status:'locked' },
+  'files/job999/r1/old.dxf': 'old',
+  'files/job999/r2/final.dxf': 'final',
+});
+const purged = await purgeStoredJob(complete, 'job999');
+assert.equal(purged.deleted, true);
+assert.equal(await complete.get('heads/job999.json'), null);
+assert.equal(await complete.get('jobs/job999/r1.json'), null);
+assert.equal(await complete.get('jobs/job999/r2.json'), null);
+assert.equal(await complete.get('files/job999/r2/final.dxf'), null);
 }
 
 console.log('job-delete tests passed');

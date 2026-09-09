@@ -1,0 +1,14 @@
+.release-downloads {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.release-downloads[hidden] {
+  display: none;
+}
+
+.release-downloads .button {
+  text-align: center;
+  text-decoration: none;
+}

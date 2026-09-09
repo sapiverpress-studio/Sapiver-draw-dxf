@@ -54,6 +54,7 @@ export function geometrySlots(source) {
 }
 
 export function slotOwner(source, slot) {
+  if (!slot) return null;
   const part = source?.analysis?.parts?.[slot.partIndex];
   if (!part) return null;
   return slot.ownerType === 'profile' ? part.profile : part.features?.[slot.featureIndex] || null;
@@ -154,7 +155,7 @@ export function dimensionForSlot(source, slot) {
 }
 
 export function dimensionReadyForSlot(slot, dimension) {
-  if (!(dimension?.confirmed && finitePositive(dimension.valueMm))) return false;
+  if (!slot || !(dimension?.confirmed && finitePositive(dimension.valueMm))) return false;
   if (slot.kind === 'size') return dimension.reference === 'size';
   if (!['centre', 'edge'].includes(dimension.reference)) return false;
   const allowed = slot.axis === 'x' ? ['left', 'right'] : ['top', 'bottom'];

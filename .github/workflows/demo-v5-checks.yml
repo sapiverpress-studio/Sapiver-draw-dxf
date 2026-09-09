@@ -2,7 +2,7 @@ name: Quick DXF demo v5 checks
 
 on:
   push:
-    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip]
+    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip, feature/passcode-manual-drawing]
   workflow_dispatch:
 
 permissions:
@@ -23,13 +23,17 @@ jobs:
           node --check review-stages.js
           node --check core/review-model.js
           node --check netlify/functions/jobs.mjs
+          node --check netlify/functions/access.mjs
+          node --check netlify/lib/access-auth.mjs
           node --check netlify/lib/job-delete.mjs
       - name: Existing deterministic geometry tests
         run: node tests/geometry.test.mjs
       - name: Feature-aware review tests
         run: node tests/review-model.test.mjs
       - name: Draft deletion tests
-        run: node tests/job-delete.test.mjs
+        run: |
+          node tests/job-delete.test.mjs
+          node tests/access-auth.test.mjs
       - name: Existing share tests
         run: |
           node tests/release-share.test.mjs
@@ -49,6 +53,19 @@ jobs:
           const page = await browser.newPage();
           const errors = [];
           page.on('pageerror', (e) => { errors.push(String(e)); console.log('PAGEERROR', String(e)); });
+          await page.setRequestInterception(true);
+          page.on('request', (request) => {
+            const url = request.url();
+            if (url.includes('/.netlify/functions/access')) return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({configured:true, authenticated:true}) });
+            if (url.includes('/.netlify/functions/jobs')) {
+              if (request.method() === 'PUT') {
+                const job = JSON.parse(request.postData() || '{}');
+                return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({ok:true, job:{...job,createdAt:job.createdAt||new Date().toISOString(),updatedAt:new Date().toISOString()}}) });
+              }
+              return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({ok:true,jobs:[]}) });
+            }
+            request.continue();
+          });
           await page.goto('http://127.0.0.1:4173/', { waitUntil:'domcontentloaded' });
           const cached = {
             id:'demo123456', revision:1, status:'draft', jobRef:'DEMO', customerName:'Test', staffName:'Jim', date:'2026-09-09',
@@ -129,6 +146,34 @@ jobs:
           });
           await new Promise((r) => setTimeout(r, 120));
           if (await page.$$eval('.unlinked-read', (els) => els.length) !== beforeOther) process.exit(16);
+
+          await page.evaluate(() => localStorage.removeItem('quick-dxf-unsynced-v1'));
+          await page.reload({ waitUntil:'domcontentloaded' });
+          await new Promise((r) => setTimeout(r, 250));
+          await page.click('#manualDrawingBtn');
+          await page.type('#manualWidth', '1500');
+          await page.type('#manualHeight', '500');
+          const first = '#manualCutouts .manual-cutout:nth-child(1)';
+          await page.type(`${first} [data-field="x"]`, '200');
+          await page.type(`${first} [data-field="y"]`, '100');
+          await page.type(`${first} [data-field="width"]`, '130');
+          await page.type(`${first} [data-field="height"]`, '75');
+          await page.click('#addManualCutoutBtn');
+          const second = '#manualCutouts .manual-cutout:nth-child(2)';
+          await page.select(`${second} [data-field="from"]`, 'right');
+          await page.type(`${second} [data-field="x"]`, '150');
+          await page.type(`${second} [data-field="y"]`, '120');
+          await page.type(`${second} [data-field="width"]`, '100');
+          await page.type(`${second} [data-field="height"]`, '60');
+          await page.click('#manualDrawingForm button[type="submit"]');
+          await new Promise((r) => setTimeout(r, 250));
+          const manual = await page.evaluate(() => ({
+            progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
+            geometryState: document.querySelector('#geometryState')?.textContent?.trim(),
+            dimensions: [...document.querySelectorAll('.dimension-title-row strong')].map((x) => x.textContent),
+          }));
+          console.log('MANUAL', JSON.stringify(manual));
+          if (manual.progress !== '10 / 10 confirmed' || !manual.geometryState.includes('Deterministic geometry ready') || !manual.dimensions.some((x) => x.includes('Socket cut-out 2'))) process.exit(18);
 
           await browser.close();
           if (errors.length) process.exit(17);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../netlify/functions/_openai-auth.mjs';
+import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../netlify/lib/openai-auth.mjs';
 
 assert.equal(normaliseApiKey('  sk-test-1234  '), 'sk-test-1234');
 assert.equal(normaliseApiKey('"sk-test-1234"'), 'sk-test-1234');

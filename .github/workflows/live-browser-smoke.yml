@@ -39,12 +39,15 @@ jobs:
           const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox'] });
           const page = await browser.newPage();
           const errors = [];
+          const pending = new Set();
           page.on('console', (msg) => console.log(`console.${msg.type()}: ${msg.text()}`));
           page.on('pageerror', (err) => { errors.push(String(err)); console.log(`PAGEERROR: ${err}`); });
-          page.on('requestfailed', (req) => console.log(`REQUESTFAILED: ${req.url()} :: ${req.failure()?.errorText}`));
-          const response = await page.goto('https://sapiver-draw-dxf.netlify.app/?browser-smoke=1', { waitUntil: 'networkidle2', timeout: 60000 });
+          page.on('request', (req) => pending.add(req.url()));
+          page.on('requestfinished', (req) => pending.delete(req.url()));
+          page.on('requestfailed', (req) => { pending.delete(req.url()); console.log(`REQUESTFAILED: ${req.url()} :: ${req.failure()?.errorText}`); });
+          const response = await page.goto('https://sapiver-draw-dxf.netlify.app/?browser-smoke=2', { waitUntil: 'domcontentloaded', timeout: 30000 });
           console.log(`HTTP: ${response?.status()}`);
-          await new Promise((r) => setTimeout(r, 3000));
+          await new Promise((r) => setTimeout(r, 5000));
           const state = await page.evaluate(() => ({
             badge: document.querySelector('#storageBadge')?.textContent?.trim(),
             date: document.querySelector('#jobDate')?.value,
@@ -52,6 +55,7 @@ jobs:
             bodyReady: document.readyState,
           }));
           console.log('STATE', JSON.stringify(state));
+          console.log('PENDING', JSON.stringify([...pending]));
           await browser.close();
           if (errors.length) process.exit(2);
           if (state.badge === 'Shared storage: checking') process.exit(3);

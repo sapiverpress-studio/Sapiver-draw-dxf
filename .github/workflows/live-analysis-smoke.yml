@@ -1,0 +1,63 @@
+name: Quick DXF live analysis smoke test
+
+on:
+  push:
+    branches: [prototype-v1]
+    paths:
+      - '.github/workflows/live-analysis-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      BASE_URL: https://sapiver-draw-dxf.netlify.app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload benchmark drawing to live shared storage
+        id: upload
+        shell: bash
+        run: |
+          JOB_ID="smoke${GITHUB_RUN_ID}"
+          FILE_ID="drawing.png"
+          ENDPOINT="$BASE_URL/.netlify/functions/job-file?job=$JOB_ID&revision=1&file=$FILE_ID"
+          BODY=$(curl --fail-with-body -sS -X PUT "$ENDPOINT" \
+            -H 'content-type: image/png' \
+            -H 'x-file-name: hand-drawn-counter-sketch-clean.png' \
+            -H 'x-file-kind: smoke-test' \
+            --data-binary @run-tests/hand-drawn-counter-sketch-clean.png)
+          echo "$BODY"
+          FILE_KEY=$(printf '%s' "$BODY" | jq -r '.fileKey')
+          test -n "$FILE_KEY" && test "$FILE_KEY" != "null"
+          echo "job_id=$JOB_ID" >> "$GITHUB_OUTPUT"
+          echo "file_id=$FILE_ID" >> "$GITHUB_OUTPUT"
+          echo "file_key=$FILE_KEY" >> "$GITHUB_OUTPUT"
+      - name: Analyse benchmark through live Netlify function
+        shell: bash
+        run: |
+          PAYLOAD=$(jq -nc \
+            --arg jobId '${{ steps.upload.outputs.job_id }}' \
+            --arg fileId '${{ steps.upload.outputs.file_id }}' \
+            --arg fileKey '${{ steps.upload.outputs.file_key }}' \
+            '{jobId:$jobId,revision:1,fileId:$fileId,fileKey:$fileKey,contentType:"image/png",filename:"hand-drawn-counter-sketch-clean.png"}')
+          HTTP=$(curl -sS -o /tmp/analysis.json -w '%{http_code}' -X POST "$BASE_URL/.netlify/functions/analyse-drawing" \
+            -H 'content-type: application/json' \
+            --data "$PAYLOAD")
+          cat /tmp/analysis.json | jq .
+          if [ "$HTTP" != "200" ]; then
+            echo "Live analysis returned HTTP $HTTP"
+            exit 1
+          fi
+          jq -e '.ok == true and (.extraction.dimensions | length) > 0' /tmp/analysis.json >/dev/null
+      - name: Remove smoke-test drawing
+        if: always()
+        shell: bash
+        run: |
+          JOB_ID='${{ steps.upload.outputs.job_id }}'
+          FILE_ID='${{ steps.upload.outputs.file_id }}'
+          if [ -n "$JOB_ID" ] && [ -n "$FILE_ID" ]; then
+            curl -sS -X DELETE "$BASE_URL/.netlify/functions/job-file?job=$JOB_ID&revision=1&file=$FILE_ID" >/dev/null || true
+          fi

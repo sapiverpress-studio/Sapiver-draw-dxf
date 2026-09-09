@@ -63,26 +63,30 @@ export async function shareCurrentJob() {
   for (const ref of refs) files.push(await fileFromRef(ref));
 
   const jobRef = String(job.jobRef || job.id || 'Quick DXF');
+  const buffers = await Promise.all(files.map((file) => file.arrayBuffer()));
+  const zipBytes = buildStoredZip(files.map((file, index) => ({ name: file.name, data: new Uint8Array(buffers[index]) })));
+  const safeJobRef = jobRef.replace(/[^A-Za-z0-9_-]+/g, '-');
+  const zipFile = new File([zipBytes], `${safeJobRef}-r${job.revision || 1}-release-pack.zip`, { type: 'application/zip' });
   const shareData = {
     title: `Quick DXF ${jobRef} · Rev ${job.revision || 1}`,
     text: job.outcome === 'production'
       ? `Approved Quick DXF production pack for ${jobRef}, revision ${job.revision || 1}.`
       : `Confirmed DXF files for ${jobRef}, revision ${job.revision || 1}.`,
-    files,
+    files: [zipFile],
   };
 
-  if (navigator.share && (!navigator.canShare || navigator.canShare({ files }))) {
+  if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [zipFile] }))) {
     try {
       await navigator.share(shareData);
       return { mode: 'share', fileCount: files.length };
     } catch (error) {
       if (error?.name === 'AbortError') throw error;
-      await downloadFiles(files);
+      saveZip(zipBytes, zipFile.name);
       return { mode: 'download-fallback', fileCount: files.length };
     }
   }
 
-  await downloadFiles(files);
+  saveZip(zipBytes, zipFile.name);
   return { mode: 'download', fileCount: files.length };
 }
 

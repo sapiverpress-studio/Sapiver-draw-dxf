@@ -12,3 +12,28 @@
   text-align: center;
   text-decoration: none;
 }
+
+.access-gate { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 18px; background: #eef1f5; }
+.access-gate[hidden] { display: none; }
+.access-card { width: min(390px, 100%); padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.18); }
+.access-display { display: block; margin: 20px 0 14px; padding: 15px; border: 1px solid #cbd5e1; border-radius: 11px; background: #f8fafc; text-align: center; font-size: 1.2rem; letter-spacing: .22rem; min-height: 56px; }
+.access-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; }
+.access-key { min-height: 54px; border: 1px solid #cbd5e1; border-radius: 11px; background: #fff; color: var(--ink); font-size: 1.15rem; font-weight: 800; cursor: pointer; }
+.access-key:hover { background: #f8fafc; }
+.access-key.submit { background: var(--accent); border-color: var(--accent); color: #fff; }
+.access-error { min-height: 20px; margin: 10px 0 0; color: #b42318; font-size: .8rem; font-weight: 700; }
+.manual-panel-grid, .manual-cutout-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.manual-cutout-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.manual-cutout-head h3 { margin: 0; }
+.manual-cutouts { display: grid; gap: 12px; max-height: 46vh; overflow: auto; }
+.manual-cutout { margin: 0; padding: 12px; border: 1px solid #d0d5dd; border-radius: 11px; }
+.manual-cutout legend { padding: 0 6px; font-weight: 800; }
+.manual-cutout label { margin: 0; }
+.manual-cutout select { width: 100%; min-height: 44px; margin-top: 6px; border: 1px solid #cbd5e1; border-radius: 9px; background: #fff; padding: 9px 10px; }
+.delete-code-dialog { width: min(420px, calc(100% - 24px)); }
+.danger-quiet { margin-top: 12px; border-color: #fecdca !important; color: #b42318 !important; }
+
+@media(max-width:580px) {
+  .manual-panel-grid, .manual-cutout-grid { grid-template-columns: 1fr; }
+  .manual-cutout-head { align-items: stretch; flex-direction: column; }
+}

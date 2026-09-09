@@ -12,6 +12,16 @@
   <link rel="stylesheet" href="./release-fixes.css">
 </head>
 <body>
+  <div id="accessGate" class="access-gate" role="dialog" aria-modal="true" aria-labelledby="accessTitle">
+    <form id="accessForm" class="access-card">
+      <p class="eyebrow">Protected access</p>
+      <h1 id="accessTitle">Quick DXF login</h1>
+      <p class="helper">Enter the six-digit code, then press #.</p>
+      <output id="accessDisplay" class="access-display" aria-live="polite">○ ○ ○ ○ ○ ○</output>
+      <div id="accessKeypad" class="access-keypad" aria-label="Number keypad"></div>
+      <p id="accessError" class="access-error" aria-live="assertive"></p>
+    </form>
+  </div>
   <header class="topbar">
     <div>
       <div class="brand">Quick DXF</div>
@@ -63,6 +73,7 @@
       <div class="capture-row">
         <label class="button primary file-button">Take photo<input id="cameraInput" type="file" accept="image/*" capture="environment" hidden></label>
         <label class="button file-button">Add images / PDF<input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,application/pdf,.pdf" multiple hidden></label>
+        <button id="manualDrawingBtn" class="button" type="button">Enter drawing manually</button>
       </div>
       <div id="sourceStrip" class="source-strip" aria-label="Job drawings"></div>
       <div id="sourceEmpty" class="source-empty">No drawings added to this job.</div>
@@ -134,6 +145,7 @@
       <div id="dxfState" class="signed-state">DXF files are generated only when the signed revision is released.</div>
       <div id="releaseDownloads" class="release-downloads" hidden></div>
       <button id="sendBtn" class="button primary full send-button" type="button" hidden disabled>Share job pack</button>
+      <button id="purgeJobBtn" class="button danger-quiet full" type="button" hidden>Saved to work server — delete from Quick DXF</button>
       <p id="releaseMessage" class="helper release-message">Add drawings and complete confirmation before release.</p>
     </section>
   </main>
@@ -141,6 +153,29 @@
   <footer>
     Production rule: AI proposes. A human confirms every production parameter. Signed revisions are immutable. Release packs are shared from the device to email, Drive or another destination; the work server remains the permanent archive.
   </footer>
+  <dialog id="manualDrawingDialog" class="dimension-dialog manual-drawing-dialog">
+    <form id="manualDrawingForm" class="dimension-dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">Manual drawing</p><h2>Rectangular panel</h2></div><button class="dialog-x" type="button" data-close-manual aria-label="Cancel">×</button></div>
+      <p class="helper">Overall width sets the top and bottom. Overall height sets the left and right.</p>
+      <div class="manual-panel-grid">
+        <label>Top / bottom width (mm)<input id="manualWidth" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+        <label>Left / right height (mm)<input id="manualHeight" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+      </div>
+      <div class="manual-cutout-head"><h3>Socket cut-outs</h3><button id="addManualCutoutBtn" class="button quiet" type="button">Add another cut-out</button></div>
+      <div id="manualCutouts" class="manual-cutouts"></div>
+      <p id="manualDrawingError" class="access-error" aria-live="assertive"></p>
+      <div class="dialog-actions"><button class="button quiet" type="button" data-close-manual>Cancel</button><button class="button primary" type="submit">Create drawing</button></div>
+    </form>
+  </dialog>
+  <dialog id="deleteCodeDialog" class="dimension-dialog delete-code-dialog">
+    <form id="deleteCodeForm" class="dimension-dialog-card">
+      <div class="dialog-head"><div><p class="eyebrow">Permanent deletion</p><h2>Delete this stored job?</h2></div><button class="dialog-x" type="button" data-close-delete aria-label="Cancel">×</button></div>
+      <p class="helper">Only continue after the drawing and job pack are safely stored on your work server. Every Quick DXF revision and file for this job will be permanently removed.</p>
+      <output id="deleteCodeDisplay" class="access-display" aria-live="polite">○ ○ ○ ○ ○ ○</output>
+      <div id="deleteKeypad" class="access-keypad" aria-label="Deletion code keypad"></div>
+      <p id="deleteCodeError" class="access-error" aria-live="assertive"></p>
+    </form>
+  </dialog>
   <script type="module" src="./share-release.js"></script>
   <script type="module" src="./app-v5.js"></script>
   <script type="module" src="./review-stages.js"></script>

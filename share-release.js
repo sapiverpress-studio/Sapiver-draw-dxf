@@ -87,7 +87,10 @@ export async function shareCurrentJob() {
 
 function removeLegacyEmailLanguage() {
   const button = document.querySelector('#sendBtn');
-  if (button && button.textContent !== 'Sharing…') button.textContent = 'Share job pack';
+  const buttonText = button?.textContent?.trim();
+  if (button && buttonText !== 'Sharing…' && buttonText !== 'Share job pack') {
+    button.textContent = 'Share job pack';
+  }
   const message = document.querySelector('#releaseMessage');
   if (message?.textContent.includes('Confirm the recipient and email the release pack.')) {
     message.textContent = 'Revision locked. Share the release pack to email, Drive or another destination on this device.';

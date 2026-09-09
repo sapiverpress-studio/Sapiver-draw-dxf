@@ -12,7 +12,7 @@ permissions:
 jobs:
   smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 7
     env:
       BASE_URL: https://sapiver-draw-dxf.netlify.app
     steps:
@@ -38,7 +38,7 @@ jobs:
           echo "file_key=$FILE_KEY" >> "$GITHUB_OUTPUT"
           echo "content_type=$CONTENT_TYPE" >> "$GITHUB_OUTPUT"
           echo "filename=$FILENAME" >> "$GITHUB_OUTPUT"
-      - name: Analyse saved drawing through live Netlify function
+      - name: Analyse saved drawing through live background flow
         shell: bash
         run: |
           PAYLOAD=$(jq -nc \
@@ -49,12 +49,45 @@ jobs:
             --arg contentType '${{ steps.source.outputs.content_type }}' \
             --arg filename '${{ steps.source.outputs.filename }}' \
             '{jobId:$jobId,revision:$revision,fileId:$fileId,fileKey:$fileKey,contentType:$contentType,filename:$filename}')
+
           HTTP=$(curl -sS -o /tmp/analysis.json -w '%{http_code}' -X POST "$BASE_URL/.netlify/functions/analyse-drawing" \
-            -H 'content-type: application/json' \
-            --data "$PAYLOAD")
-          cat /tmp/analysis.json | jq .
-          if [ "$HTTP" != "200" ]; then
-            echo "Live analysis returned HTTP $HTTP"
+            -H 'content-type: application/json' --data "$PAYLOAD")
+          echo "Start HTTP $HTTP"
+          cat /tmp/analysis.json
+          echo
+
+          if [ "$HTTP" = "200" ]; then
+            jq -e '.ok == true and (.extraction.dimensions | length) > 0' /tmp/analysis.json >/dev/null
+            exit 0
+          fi
+          if [ "$HTTP" != "202" ]; then
+            echo "Analysis start failed with HTTP $HTTP"
             exit 1
           fi
-          jq -e '.ok == true and (.extraction.dimensions | length) > 0' /tmp/analysis.json >/dev/null
+
+          RESPONSE_ID=$(jq -r '.responseId // empty' /tmp/analysis.json)
+          test -n "$RESPONSE_ID"
+          echo "Background response: $RESPONSE_ID"
+
+          for attempt in $(seq 1 150); do
+            sleep 2
+            POLL=$(jq -nc --arg responseId "$RESPONSE_ID" '{action:"poll",responseId:$responseId}')
+            HTTP=$(curl -sS -o /tmp/poll.json -w '%{http_code}' -X POST "$BASE_URL/.netlify/functions/analyse-drawing" \
+              -H 'content-type: application/json' --data "$POLL")
+            if [ "$HTTP" = "202" ]; then
+              STATUS=$(jq -r '.status // "pending"' /tmp/poll.json)
+              echo "Poll $attempt: $STATUS"
+              continue
+            fi
+            if [ "$HTTP" != "200" ]; then
+              echo "Poll $attempt failed with HTTP $HTTP"
+              cat /tmp/poll.json
+              exit 1
+            fi
+            jq -e '.ok == true and .pending == false and (.extraction.dimensions | length) > 0' /tmp/poll.json >/dev/null
+            echo "Live background analysis completed with $(jq '.extraction.dimensions | length' /tmp/poll.json) extracted dimensions."
+            exit 0
+          done
+
+          echo "Background analysis did not complete within five minutes."
+          exit 1

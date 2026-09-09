@@ -26,7 +26,7 @@ const els = {
   geometryPreview: $('#geometryPreview'), geometryPlaceholder: $('#geometryPlaceholder'), geometryState: $('#geometryState'),
   aiState: $('#aiState'), analyseBtn: $('#analyseBtn'), dimensionList: $('#dimensionList'), dimensionEmpty: $('#dimensionEmpty'), reviewProgress: $('#reviewProgress'), addCorrectionBtn: $('#addCorrectionBtn'),
   pdfBtn: $('#pdfBtn'), pdfState: $('#pdfState'), signedInput: $('#signedInput'), signedState: $('#signedState'), customerConfirmed: $('#customerConfirmed'),
-  productionBtn: $('#productionBtn'), exportChoiceBtn: $('#exportChoiceBtn'), sendBtn: $('#sendBtn'), releaseMessage: $('#releaseMessage'), dxfState: $('#dxfState'),
+  productionBtn: $('#productionBtn'), exportChoiceBtn: $('#exportChoiceBtn'), sendBtn: $('#sendBtn'), releaseMessage: $('#releaseMessage'), dxfState: $('#dxfState'), releaseDownloads: $('#releaseDownloads'),
 };
 
 const API = {
@@ -901,6 +901,23 @@ function renderRelease() {
   if (els.dxfState) {
     els.dxfState.textContent = state.dxfFiles.length ? `${state.dxfFiles.length} deterministic DXF file${state.dxfFiles.length === 1 ? '' : 's'} prepared.` : 'DXF files are generated only when the signed revision is released.';
     els.dxfState.className = `signed-state ${state.dxfFiles.length ? 'ok' : ''}`;
+  }
+
+  if (els.releaseDownloads) {
+    els.releaseDownloads.innerHTML = '';
+    const refs = state.status === 'locked'
+      ? [...state.dxfFiles, state.confirmationPdf, state.outcome === 'production' ? state.signedProof : null].filter(Boolean)
+      : [];
+    for (const ref of refs) {
+      const link = document.createElement('a');
+      link.className = 'button quiet full';
+      link.href = ref.url;
+      link.download = ref.name;
+      const kind = /\.dxf$/i.test(ref.name) ? 'DXF' : /\.pdf$/i.test(ref.name) ? 'confirmation PDF' : 'signed confirmation';
+      link.textContent = `Download ${kind} · ${ref.name}`;
+      els.releaseDownloads.appendChild(link);
+    }
+    els.releaseDownloads.hidden = refs.length === 0;
   }
 
   if (state.status === 'locked') {

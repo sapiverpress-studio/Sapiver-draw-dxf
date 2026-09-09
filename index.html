@@ -72,7 +72,7 @@
         <div>
           <p class="eyebrow">3 · Confirm</p>
           <h1 id="activeSourceTitle">Select a drawing</h1>
-          <p id="activeSourceMeta" class="helper">AI proposes the geometry; the assistant/customer confirms each production parameter against the source.</p>
+          <p id="activeSourceMeta" class="helper">Confirm the outside perimeter first. The clean drawing appears with those sizes, then cut-outs and holes are confirmed and added to it.</p>
         </div>
         <span id="reviewProgress" class="counter">0 / 0 confirmed</span>
       </div>
@@ -87,12 +87,12 @@
             </div>
           </div>
           <div>
-            <p class="preview-label">Clean confirmed geometry</p>
+            <p class="preview-label">Confirmed digital drawing</p>
             <div class="drawing-preview-wrap geometry-preview-wrap">
               <img id="geometryPreview" alt="Confirmed digital drawing" hidden>
-              <div id="geometryPlaceholder" class="drawing-placeholder">Confirmed measurements will build the digital drawing</div>
+              <div id="geometryPlaceholder" class="drawing-placeholder">Confirm the perimeter to build the digital drawing</div>
             </div>
-            <div id="geometryState" class="ai-state geometry-state">Clean geometry will update as measurements are confirmed.</div>
+            <div id="geometryState" class="ai-state geometry-state">Perimeter dimensions appear first; confirmed cut-outs are added afterwards.</div>
           </div>
         </div>
         <div class="dimension-side">
@@ -141,5 +141,6 @@
   </footer>
   <script type="module" src="./share-release.js"></script>
   <script type="module" src="./app-v5.js"></script>
+  <script type="module" src="./review-stages.js"></script>
 </body>
 </html>

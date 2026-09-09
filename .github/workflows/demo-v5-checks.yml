@@ -96,16 +96,16 @@ jobs:
             drawing: decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(',')),
           }));
           console.log('PERIMETER', JSON.stringify({progress:state.progress, featuresVisible:state.featuresVisible}));
-          if (!state.featuresVisible || !state.drawing.includes('1500 mm') || !state.drawing.includes('500 mm') || state.drawing.includes('F1 130 mm')) process.exit(12);
+          if (!state.featuresVisible || !state.drawing.includes('1500 mm') || !state.drawing.includes('500 mm') || state.drawing.includes('Rectangular cut-out 1 130 mm')) process.exit(12);
 
-          for (const label of ['F1 width','F1 height','F1 X position','F1 Y position']) await confirmByLabel(label);
+          for (const label of ['Rectangular cut-out 1 width','Rectangular cut-out 1 height','Rectangular cut-out 1 X position','Rectangular cut-out 1 Y position']) await confirmByLabel(label);
           state = await page.evaluate(() => ({
             progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
             geometryState: document.querySelector('#geometryState')?.textContent?.trim(),
             drawing: decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(',')),
           }));
           console.log('COMPLETE', JSON.stringify({progress:state.progress, geometryState:state.geometryState}));
-          if (state.progress !== '6 / 6 confirmed' || !state.geometryState.includes('Deterministic geometry ready') || !state.drawing.includes('F1 130 mm')) process.exit(13);
+          if (state.progress !== '6 / 6 confirmed' || !state.geometryState.includes('Deterministic geometry ready') || !state.drawing.includes('Rectangular cut-out 1 130 mm')) process.exit(13);
 
           const beforeOther = await page.$$eval('.unlinked-read', (els) => els.length);
           await page.click('#addCorrectionBtn');

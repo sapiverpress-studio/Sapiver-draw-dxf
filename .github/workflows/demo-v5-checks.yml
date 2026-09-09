@@ -2,7 +2,7 @@ name: Quick DXF demo v5 checks
 
 on:
   push:
-    branches: [demo-v5, fix/android-drawing-share-labels]
+    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip]
   workflow_dispatch:
 
 permissions:
@@ -31,7 +31,10 @@ jobs:
       - name: Draft deletion tests
         run: node tests/job-delete.test.mjs
       - name: Existing share tests
-        run: node tests/release-share.test.mjs
+        run: |
+          node tests/release-share.test.mjs
+          node tests/zip.test.mjs
+          unzip -t /tmp/quick-dxf-test.zip
       - name: Install browser driver only
         run: npm install --no-save --ignore-scripts puppeteer-core@24
       - name: Browser interaction test

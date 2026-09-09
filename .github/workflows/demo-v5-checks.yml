@@ -1,0 +1,134 @@
+name: Quick DXF demo v5 checks
+
+on:
+  push:
+    branches: [demo-v5]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check app-v5.js
+          node --check review-stages.js
+          node --check core/review-model.js
+          node --check netlify/functions/jobs.mjs
+          node --check netlify/lib/job-delete.mjs
+      - name: Existing deterministic geometry tests
+        run: node tests/geometry.test.mjs
+      - name: Feature-aware review tests
+        run: node tests/review-model.test.mjs
+      - name: Draft deletion tests
+        run: node tests/job-delete.test.mjs
+      - name: Existing share tests
+        run: node tests/release-share.test.mjs
+      - name: Install browser driver only
+        run: npm install --no-save --ignore-scripts puppeteer-core@24
+      - name: Browser interaction test
+        run: |
+          python3 -m http.server 4173 >/tmp/quick-dxf-http.log 2>&1 &
+          cat > /tmp/demo-browser.mjs <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import fs from 'node:fs';
+          const executablePath = ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].find(fs.existsSync);
+          if (!executablePath) throw new Error('No Chromium available');
+          const browser = await puppeteer.launch({ executablePath, headless:true, args:['--no-sandbox'] });
+          const page = await browser.newPage();
+          const errors = [];
+          page.on('pageerror', (e) => { errors.push(String(e)); console.log('PAGEERROR', String(e)); });
+          await page.goto('http://127.0.0.1:4173/', { waitUntil:'domcontentloaded' });
+          const cached = {
+            id:'demo123456', revision:1, status:'draft', jobRef:'DEMO', customerName:'Test', staffName:'Jim', date:'2026-09-09',
+            sources:[{
+              id:'source1', name:'panel.jpg', kind:'image', contentType:'image/jpeg', fileId:'source1.jpg', fileKey:'files/demo/source.jpg', sourceRevision:1,
+              previewUrl:null, analysisStatus:'review',
+              analysis:{ parts:[{ id:'panel', label:'Panel', profile:{ type:'rectangle', width_mm:1500, height_mm:500, diameter_mm:null, width_dimension_id:'d1', height_dimension_id:'d2', diameter_dimension_id:null, confidence:'high' }, features:[{ id:'f1', type:'rectangular_cutout', quantity:1, width_mm:130, height_mm:75, diameter_mm:null, radius_mm:null, x_mm:200, x_reference:'edge', x_from_edge:'left', y_mm:100, y_reference:'edge', y_from_edge:'bottom', touching_edge:'none', width_dimension_id:'d3', height_dimension_id:'d4', diameter_dimension_id:null, radius_dimension_id:null, x_dimension_id:'d5', y_dimension_id:'d6', confidence:'high', source_note:null }], dimension_ids:['d1','d2','d3','d4','d5','d6'] }] },
+              dimensions:[
+                {id:'d1',label:'overall width',role:'overall',valueMm:1500,reference:'size',fromEdge:'unknown',rawText:'1500',confidence:'high',confirmed:false},
+                {id:'d2',label:'overall height',role:'overall',valueMm:500,reference:'size',fromEdge:'unknown',rawText:'500',confidence:'high',confirmed:false},
+                {id:'d3',label:'f1 width',role:'unknown',valueMm:130,reference:'edge',fromEdge:'left',rawText:'130',confidence:'low',confirmed:false},
+                {id:'d4',label:'f1 height',role:'size',valueMm:75,reference:'size',fromEdge:'bottom',rawText:'75',confidence:'medium',confirmed:false},
+                {id:'d5',label:'f1 x',role:'position',valueMm:200,reference:'edge',fromEdge:'left',rawText:'200',confidence:'high',confirmed:false},
+                {id:'d6',label:'f1 y',role:'position',valueMm:100,reference:'edge',fromEdge:'bottom',rawText:'100',confidence:'high',confirmed:false}
+              ]
+            }]
+          };
+          await page.evaluate((value) => localStorage.setItem('quick-dxf-unsynced-v1', JSON.stringify(value)), cached);
+          await page.reload({ waitUntil:'domcontentloaded' });
+          await new Promise((r) => setTimeout(r, 500));
+
+          let state = await page.evaluate(() => ({
+            progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
+            stage1: document.querySelector('[data-review-stage="perimeter"] strong')?.textContent?.trim(),
+            stage2: document.querySelector('[data-review-stage="features"] strong')?.textContent?.trim(),
+            featuresHidden: [...document.querySelectorAll('.feature-group:not(.auxiliary-group)')].filter((g) => ![...g.querySelectorAll('.dimension-title-row strong')].every((x) => x.textContent.toLowerCase().startsWith('overall '))).every((g) => g.hidden),
+          }));
+          console.log('INITIAL', JSON.stringify(state));
+          if (state.stage1 !== '1 · Confirm perimeter' || state.stage2 !== '2 · Add cut-outs / holes' || !state.featuresHidden) process.exit(11);
+
+          async function confirmByLabel(label) {
+            const ok = await page.evaluate((wanted) => {
+              const cards = [...document.querySelectorAll('.feature-dimension')];
+              const card = cards.find((c) => c.querySelector('.dimension-title-row strong')?.textContent?.trim() === wanted);
+              if (!card) return false;
+              card.querySelector('.dimension-confirm')?.click();
+              return true;
+            }, label);
+            if (!ok) throw new Error(`Missing card ${label}`);
+            await new Promise((r) => setTimeout(r, 120));
+          }
+
+          await confirmByLabel('Overall width');
+          await confirmByLabel('Overall height');
+          state = await page.evaluate(() => ({
+            progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
+            featuresVisible: [...document.querySelectorAll('.feature-group:not(.auxiliary-group)')].some((g) => !g.hidden && ![...g.querySelectorAll('.dimension-title-row strong')].every((x) => x.textContent.toLowerCase().startsWith('overall '))),
+            drawing: decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(',')),
+          }));
+          console.log('PERIMETER', JSON.stringify({progress:state.progress, featuresVisible:state.featuresVisible}));
+          if (!state.featuresVisible || !state.drawing.includes('1500 mm') || !state.drawing.includes('500 mm') || state.drawing.includes('F1 130 mm')) process.exit(12);
+
+          for (const label of ['F1 width','F1 height','F1 X position','F1 Y position']) await confirmByLabel(label);
+          state = await page.evaluate(() => ({
+            progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
+            geometryState: document.querySelector('#geometryState')?.textContent?.trim(),
+            drawing: decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(',')),
+          }));
+          console.log('COMPLETE', JSON.stringify({progress:state.progress, geometryState:state.geometryState}));
+          if (state.progress !== '6 / 6 confirmed' || !state.geometryState.includes('Deterministic geometry ready') || !state.drawing.includes('F1 130 mm')) process.exit(13);
+
+          const beforeOther = await page.$$eval('.unlinked-read', (els) => els.length);
+          await page.click('#addCorrectionBtn');
+          await new Promise((r) => setTimeout(r, 50));
+          await page.click('#dimensionDialog .dialog-actions .quiet');
+          const afterCancel = await page.$$eval('.unlinked-read', (els) => els.length);
+          if (afterCancel !== beforeOther) process.exit(14);
+
+          await page.click('#addCorrectionBtn');
+          await page.type('#dimensionValue', '42');
+          await page.click('#dimensionAddBtn');
+          await new Promise((r) => setTimeout(r, 120));
+          const afterAdd = await page.evaluate(() => ({ extras:document.querySelectorAll('.unlinked-read').length, progress:document.querySelector('#reviewProgress')?.textContent?.trim() }));
+          if (afterAdd.extras !== beforeOther + 1 || afterAdd.progress !== '6 / 6 confirmed') process.exit(15);
+          await page.evaluate(() => {
+            const row = [...document.querySelectorAll('.unlinked-read')].find((r) => r.textContent.includes('42'));
+            [...(row?.querySelectorAll('button') || [])].find((b) => b.textContent.trim() === 'Remove')?.click();
+          });
+          await new Promise((r) => setTimeout(r, 120));
+          if (await page.$$eval('.unlinked-read', (els) => els.length) !== beforeOther) process.exit(16);
+
+          await browser.close();
+          if (errors.length) process.exit(17);
+          console.log('browser v5 demo test passed');
+          NODE
+          node /tmp/demo-browser.mjs

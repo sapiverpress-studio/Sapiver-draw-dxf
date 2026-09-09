@@ -26,6 +26,7 @@ const CACHE_KEY = 'quick-dxf-unsynced-v1';
 let saveTimer = null;
 let saving = false;
 let backendOnline = false;
+const activeAnalysisPolls = new Set();
 
 const initialState = () => ({
   id: crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -85,6 +86,8 @@ function serialisableState() {
       previewFileId: s.previewFileId || null, previewFileKey: s.previewFileKey || null, previewUrl: s.previewUrl || null,
       pageCount: s.pageCount || null,
       analysisStatus: s.analysisStatus, analysis: s.analysis || null,
+      analysisResponseId: s.analysisResponseId || null, analysisStartedAt: s.analysisStartedAt || null,
+      analysisModel: s.analysisModel || null, analysisUsage: s.analysisUsage || null,
       dimensions: s.dimensions || [],
     })),
     confirmationPdf: state.confirmationPdf,
@@ -165,6 +168,7 @@ function hydrateJob(job) {
   setEditable(!isFrozen());
   cacheLocal();
   render();
+  queueMicrotask(() => resumePendingAnalyses());
 }
 
 function setEditable(enabled) {
@@ -290,7 +294,7 @@ async function newRevision() {
   state.sentTo = null;
   state.customerConfirmed = false;
   els.customerConfirmed.checked = false;
-  state.sources = state.sources.map((s) => ({ ...s, dimensions: (s.dimensions || []).map((d) => ({ ...d, confirmed: false })) }));
+  state.sources = state.sources.map((s) => ({ ...s, analysisResponseId: null, analysisStartedAt: null, dimensions: (s.dimensions || []).map((d) => ({ ...d, confirmed: false })) }));
   setEditable(true); render();
   await saveJob({ immediate: true });
   els.saveState.textContent = backendOnline ? `Revision ${state.revision} created from signed revision ${oldRevision}.` : `Revision ${state.revision} created locally; shared save is pending.`;
@@ -338,6 +342,7 @@ async function addSourceFile(file) {
     id: sourceId, name: file.name, kind: file.type === 'application/pdf' || ext === 'pdf' ? 'pdf' : 'image', contentType: file.type || 'application/octet-stream',
     fileId, fileKey: null, sourceRevision: state.revision, previewFileId: null, previewFileKey: null,
     previewUrl: sourceId, pageCount: null, analysisStatus: 'uploading', dimensions: [], analysis: null,
+    analysisResponseId: null, analysisStartedAt: null, analysisModel: null, analysisUsage: null,
   };
   if (file.type.startsWith('image/')) source.previewUrl = URL.createObjectURL(file);
   state.sources.push(source);
@@ -391,25 +396,119 @@ async function removeSource(sourceId) {
   invalidateApproval(); render(); scheduleSave();
 }
 
+function applyAnalysisResult(source, result) {
+  const extraction = result.extraction || {};
+  source.analysis = extraction;
+  source.dimensions = Array.isArray(extraction.dimensions) ? extraction.dimensions.map(mapDimension) : [];
+  source.analysisStatus = source.dimensions.length ? 'review' : 'needs-review';
+  source.analysisResponseId = null;
+  source.analysisStartedAt = null;
+  source.analysisModel = result.model;
+  source.analysisUsage = result.usage || null;
+  source.error = null;
+  refreshGeometry(source);
+  invalidateApproval();
+}
+
+function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+async function pollAnalysis(source) {
+  const responseId = source?.analysisResponseId;
+  if (!responseId || activeAnalysisPolls.has(responseId) || isFrozen()) return;
+  activeAnalysisPolls.add(responseId);
+  let transientFailures = 0;
+
+  try {
+    for (let attempt = 0; attempt < 180; attempt += 1) {
+      if (isFrozen() || source.analysisResponseId !== responseId || !state.sources.some((item) => item.id === source.id)) return;
+      await wait(attempt === 0 ? 750 : 2000);
+
+      let result;
+      try {
+        result = await apiJson(API.analyse, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'poll', responseId }),
+        });
+        transientFailures = 0;
+      } catch (error) {
+        transientFailures += 1;
+        if (transientFailures < 4) continue;
+        throw error;
+      }
+
+      if (source.analysisResponseId !== responseId) return;
+      if (result.pending) {
+        source.analysisStatus = 'analysing';
+        if (activeSource()?.id === source.id) render();
+        continue;
+      }
+
+      applyAnalysisResult(source, result);
+      render();
+      await saveJob({ immediate: true });
+      return;
+    }
+    throw new Error('AI analysis is still running after 6 minutes. Start the analysis again.');
+  } catch (error) {
+    if (source.analysisResponseId === responseId) {
+      source.analysisStatus = 'error';
+      source.error = error.message;
+      source.analysisResponseId = null;
+      source.analysisStartedAt = null;
+      render();
+      scheduleSave();
+    }
+  } finally {
+    activeAnalysisPolls.delete(responseId);
+  }
+}
+
+function resumePendingAnalyses() {
+  if (isFrozen()) return;
+  for (const source of state.sources) {
+    if (source.analysisStatus === 'analysing' && source.analysisResponseId) pollAnalysis(source);
+  }
+}
+
 async function analyseSource(source = activeSource()) {
   if (!source || isFrozen() || !source.fileKey) return;
-  source.analysisStatus = 'analysing'; source.error = null; render();
+  source.analysisStatus = 'analysing';
+  source.error = null;
+  source.analysis = null;
+  source.dimensions = [];
+  source.analysisResponseId = null;
+  source.analysisStartedAt = new Date().toISOString();
+  invalidateApproval();
+  render();
+
   try {
     const result = await apiJson(API.analyse, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jobId: state.id, revision: state.revision, fileId: source.fileId, fileKey: source.fileKey, contentType: source.contentType, filename: source.name }),
     });
-    const extraction = result.extraction || {};
-    source.analysis = extraction;
-    source.dimensions = Array.isArray(extraction.dimensions) ? extraction.dimensions.map(mapDimension) : [];
-    source.analysisStatus = source.dimensions.length ? 'review' : 'needs-review';
-    refreshGeometry(source);
-    source.analysisModel = result.model;
-    source.analysisUsage = result.usage || null;
-    invalidateApproval();
-    render(); await saveJob({ immediate: true });
+
+    if (result.pending) {
+      if (!result.responseId) throw new Error('AI analysis started without a response ID.');
+      source.analysisResponseId = result.responseId;
+      source.analysisModel = result.model;
+      source.analysisStatus = 'analysing';
+      render();
+      await saveJob({ immediate: true });
+      await pollAnalysis(source);
+      return;
+    }
+
+    applyAnalysisResult(source, result);
+    render();
+    await saveJob({ immediate: true });
   } catch (error) {
-    source.analysisStatus = 'error'; source.error = error.message; render(); scheduleSave();
+    source.analysisStatus = 'error';
+    source.error = error.message;
+    source.analysisResponseId = null;
+    source.analysisStartedAt = null;
+    render();
+    scheduleSave();
   }
 }
 
@@ -489,7 +588,7 @@ function renderDimensions() {
 
   if (source.analysisStatus === 'error') els.aiState.textContent = `Analysis/upload error: ${source.error || 'unknown error'}`;
   else if (source.analysisStatus === 'uploading') els.aiState.textContent = 'Uploading to shared job…';
-  else if (source.analysisStatus === 'analysing') els.aiState.textContent = 'Sol is analysing this drawing…';
+  else if (source.analysisStatus === 'analysing') els.aiState.textContent = 'Sol is analysing this drawing in the background…';
   else if (source.analysisStatus === 'awaiting') els.aiState.textContent = 'Ready for AI analysis';
   else if (sourceReady(source)) els.aiState.textContent = 'All production dimensions confirmed';
   else els.aiState.textContent = 'Customer review required';

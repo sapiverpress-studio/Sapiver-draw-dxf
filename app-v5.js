@@ -19,7 +19,7 @@ import {
 const $ = (s) => document.querySelector(s);
 const els = {
   accessGate: $('#accessGate'), accessForm: $('#accessForm'), accessDisplay: $('#accessDisplay'), accessKeypad: $('#accessKeypad'), accessError: $('#accessError'),
-  storageBadge: $('#storageBadge'), revisionBadge: $('#revisionBadge'),
+  storageBadge: $('#storageBadge'), revisionBadge: $('#revisionBadge'), logoutBtn: $('#logoutBtn'),
   newJobBtn: $('#newJobBtn'), newRevisionBtn: $('#newRevisionBtn'), saveJobBtn: $('#saveJobBtn'), saveState: $('#saveState'),
   jobRef: $('#jobRef'), customerName: $('#customerName'), customerEmail: $('#customerEmail'), staffName: $('#staffName'), jobDate: $('#jobDate'),
   jobSearch: $('#jobSearch'), refreshJobsBtn: $('#refreshJobsBtn'), jobResults: $('#jobResults'),
@@ -251,6 +251,12 @@ async function initialiseAccess() {
     if (authenticated) await checkBackend();
     else if (body.configured === false) els.accessError.textContent = 'Access protection is not configured on the server.';
   } catch { els.accessGate.hidden = false; els.accessError.textContent = 'Could not contact the work server.'; }
+}
+
+async function logout() {
+  await fetch(API.access, { method: 'DELETE' }).catch(() => null);
+  authenticated = false; backendOnline = false; els.accessGate.hidden = false; loginKeypad.reset();
+  setStorageBadge('neutral', 'Shared storage: login required');
 }
 
 async function apiJson(url, options = {}) {
@@ -1102,6 +1108,7 @@ function restoreEmergencyCache() {
 }));
 els.jobSearch.addEventListener('input', () => { clearTimeout(els.jobSearch._timer); els.jobSearch._timer = setTimeout(refreshJobs, 350); });
 els.refreshJobsBtn.addEventListener('click', refreshJobs);
+els.logoutBtn.addEventListener('click', logout);
 els.saveJobBtn.addEventListener('click', () => saveJob({ immediate: true }));
 els.newJobBtn.addEventListener('click', () => newJob(false));
 els.newRevisionBtn.addEventListener('click', newRevision);

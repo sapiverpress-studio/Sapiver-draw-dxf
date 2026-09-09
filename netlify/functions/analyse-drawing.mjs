@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
 import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA } from './_quick-dxf-analysis.mjs';
 import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../lib/openai-auth.mjs';
+import { requireAuth } from '../lib/access-auth.mjs';
 
 const MODEL = 'gpt-5.6-sol';
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
@@ -93,6 +94,8 @@ async function authFailure(error, rawApiKey, apiKey) {
 }
 
 export default async (request) => {
+  const denied = requireAuth(request, json);
+  if (denied) return denied;
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
 
   const rawApiKey = env('QUICK_DXF_API');

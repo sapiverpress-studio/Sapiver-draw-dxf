@@ -6,6 +6,8 @@ import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../lib/openai-auth.m
 const MODEL = 'gpt-5.6-sol';
 const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 const env = (key) => Netlify.env.get(key) || '';
+const PENDING_STATUSES = new Set(['queued', 'in_progress']);
+const RESPONSE_ID_RE = /^resp_[A-Za-z0-9_-]{8,250}$/;
 
 function base64(bytes) {
   return Buffer.from(bytes).toString('base64');
@@ -27,14 +29,104 @@ function publicOpenAIError(error) {
   return `${prefix}${meta ? ` (${meta})` : ''}: ${message}`;
 }
 
+function completedResponse(response) {
+  let extraction;
+  try { extraction = JSON.parse(response.output_text); }
+  catch { return json({ error: 'AI analysis completed but returned invalid structured data.' }, 502); }
+
+  return json({
+    ok: true,
+    pending: false,
+    status: response.status,
+    model: MODEL,
+    responseId: response.id,
+    usage: response.usage || null,
+    extraction,
+  });
+}
+
+function terminalError(response) {
+  const reason = String(
+    response?.error?.message ||
+    response?.incomplete_details?.reason ||
+    response?.status ||
+    'unknown terminal state',
+  ).replace(/\s+/g, ' ').trim().slice(0, 500);
+  return json({
+    error: `Drawing analysis ended without a result (${reason}).`,
+    responseId: response?.id || null,
+    status: response?.status || null,
+  }, 502);
+}
+
+async function authFailure(error, rawApiKey, apiKey) {
+  const detail = publicOpenAIError(error);
+  const status = Number(error?.status) || null;
+  let auth = null;
+
+  if (status === 401) {
+    const probe = await probeOpenAIAuth(apiKey);
+    auth = {
+      key: keyShape(rawApiKey),
+      sdkStatus: status,
+      directProbe: probe,
+    };
+  }
+
+  console.error('Quick DXF analysis failed', {
+    detail,
+    status,
+    code: error?.code,
+    requestId: error?.request_id,
+    auth,
+  });
+
+  const authSummary = auth
+    ? ` Direct authentication probe: ${auth.directProbe.status ?? 'no status'}${auth.directProbe.code ? ` (${auth.directProbe.code})` : ''}.`
+    : '';
+
+  return json({
+    error: `Drawing analysis failed. ${detail}${authSummary}`,
+    requestId: error?.request_id || null,
+    auth,
+  }, 502);
+}
+
 export default async (request) => {
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
+
   const rawApiKey = env('QUICK_DXF_API');
   const apiKey = normaliseApiKey(rawApiKey);
   if (!apiKey) return json({ error: 'QUICK_DXF_API is not configured on the server.' }, 503);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid JSON.' }, 400); }
+
+  // Netlify AI Gateway injects OPENAI_BASE_URL automatically. Quick DXF uses its
+  // own OpenAI project key, so pin the official API endpoint explicitly.
+  const openai = new OpenAI({ apiKey, baseURL: OPENAI_BASE_URL, maxRetries: 0, timeout: 20_000 });
+
+  if (body?.action === 'poll') {
+    const responseId = String(body?.responseId || '').trim();
+    if (!RESPONSE_ID_RE.test(responseId)) return json({ error: 'Invalid analysis response ID.' }, 400);
+
+    try {
+      const response = await openai.responses.retrieve(responseId);
+      if (PENDING_STATUSES.has(response.status)) {
+        return json({
+          ok: true,
+          pending: true,
+          status: response.status,
+          model: MODEL,
+          responseId: response.id,
+        }, 202);
+      }
+      if (response.status === 'completed') return completedResponse(response);
+      return terminalError(response);
+    } catch (error) {
+      return authFailure(error, rawApiKey, apiKey);
+    }
+  }
 
   const jobId = safeId(body?.jobId);
   const revision = Math.max(1, Number(body?.revision) || 1);
@@ -50,20 +142,18 @@ export default async (request) => {
   const filename = String(metadata?.metadata?.filename || body?.filename || fileId);
   const bytes = await new Response(stream).arrayBuffer();
 
-  // Netlify AI Gateway injects OPENAI_BASE_URL automatically. Quick DXF uses its
-  // own OpenAI project key, so pin the official API endpoint explicitly.
-  const openai = new OpenAI({ apiKey, baseURL: OPENAI_BASE_URL, maxRetries: 0, timeout: 120_000 });
-  let uploadedFile;
   let sourcePart;
 
   try {
     if (contentType === 'application/pdf' || filename.toLowerCase().endsWith('.pdf')) {
       const file = new File([bytes], filename, { type: 'application/pdf' });
-      uploadedFile = await openai.files.create({
+      const uploadedFile = await openai.files.create({
         file,
         purpose: 'user_data',
         expires_after: { anchor: 'created_at', seconds: 3600 },
       });
+      // The background response may continue after this function returns. The
+      // uploaded PDF therefore expires automatically instead of being deleted here.
       sourcePart = { type: 'input_file', file_id: uploadedFile.id };
     } else if (/^image\/(jpeg|png|webp)$/.test(contentType)) {
       sourcePart = {
@@ -78,7 +168,8 @@ export default async (request) => {
     const response = await openai.responses.create({
       model: MODEL,
       reasoning: { effort: 'medium' },
-      store: false,
+      background: true,
+      store: true,
       input: [{
         role: 'user',
         content: [
@@ -97,51 +188,17 @@ export default async (request) => {
       },
     });
 
-    let extraction;
-    try { extraction = JSON.parse(response.output_text); }
-    catch { return json({ error: 'AI analysis returned invalid structured data.' }, 502); }
+    if (response.status === 'completed') return completedResponse(response);
+    if (!PENDING_STATUSES.has(response.status)) return terminalError(response);
 
     return json({
       ok: true,
+      pending: true,
+      status: response.status,
       model: MODEL,
       responseId: response.id,
-      usage: response.usage || null,
-      extraction,
-    });
+    }, 202);
   } catch (error) {
-    const detail = publicOpenAIError(error);
-    const status = Number(error?.status) || null;
-    let auth = null;
-
-    if (status === 401) {
-      const probe = await probeOpenAIAuth(apiKey);
-      auth = {
-        key: keyShape(rawApiKey),
-        sdkStatus: status,
-        directProbe: probe,
-      };
-    }
-
-    console.error('Quick DXF analysis failed', {
-      detail,
-      status,
-      code: error?.code,
-      requestId: error?.request_id,
-      auth,
-    });
-
-    const authSummary = auth
-      ? ` Direct authentication probe: ${auth.directProbe.status ?? 'no status'}${auth.directProbe.code ? ` (${auth.directProbe.code})` : ''}.`
-      : '';
-
-    return json({
-      error: `Drawing analysis failed. ${detail}${authSummary}`,
-      requestId: error?.request_id || null,
-      auth,
-    }, 502);
-  } finally {
-    if (uploadedFile?.id) {
-      try { await openai.files.delete(uploadedFile.id); } catch (error) { console.warn('Could not delete temporary OpenAI file', error); }
-    }
+    return authFailure(error, rawApiKey, apiKey);
   }
 };

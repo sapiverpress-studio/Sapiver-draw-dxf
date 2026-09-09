@@ -18,27 +18,32 @@ import {
 
 const $ = (s) => document.querySelector(s);
 const els = {
+  accessGate: $('#accessGate'), accessForm: $('#accessForm'), accessDisplay: $('#accessDisplay'), accessKeypad: $('#accessKeypad'), accessError: $('#accessError'),
   storageBadge: $('#storageBadge'), revisionBadge: $('#revisionBadge'),
   newJobBtn: $('#newJobBtn'), newRevisionBtn: $('#newRevisionBtn'), saveJobBtn: $('#saveJobBtn'), saveState: $('#saveState'),
   jobRef: $('#jobRef'), customerName: $('#customerName'), customerEmail: $('#customerEmail'), staffName: $('#staffName'), jobDate: $('#jobDate'),
   jobSearch: $('#jobSearch'), refreshJobsBtn: $('#refreshJobsBtn'), jobResults: $('#jobResults'),
   cameraInput: $('#cameraInput'), fileInput: $('#fileInput'), sourceStrip: $('#sourceStrip'), sourceEmpty: $('#sourceEmpty'), sourceCount: $('#sourceCount'),
+  manualDrawingBtn: $('#manualDrawingBtn'), manualDrawingDialog: $('#manualDrawingDialog'), manualDrawingForm: $('#manualDrawingForm'), manualWidth: $('#manualWidth'), manualHeight: $('#manualHeight'), manualCutouts: $('#manualCutouts'), addManualCutoutBtn: $('#addManualCutoutBtn'), manualDrawingError: $('#manualDrawingError'),
   activeSourceTitle: $('#activeSourceTitle'), activeSourceMeta: $('#activeSourceMeta'), drawingPreview: $('#drawingPreview'), drawingPlaceholder: $('#drawingPlaceholder'),
   geometryPreview: $('#geometryPreview'), geometryPlaceholder: $('#geometryPlaceholder'), geometryState: $('#geometryState'),
   aiState: $('#aiState'), analyseBtn: $('#analyseBtn'), dimensionList: $('#dimensionList'), dimensionEmpty: $('#dimensionEmpty'), reviewProgress: $('#reviewProgress'), addCorrectionBtn: $('#addCorrectionBtn'),
   pdfBtn: $('#pdfBtn'), pdfState: $('#pdfState'), signedInput: $('#signedInput'), signedState: $('#signedState'), customerConfirmed: $('#customerConfirmed'),
   productionBtn: $('#productionBtn'), exportChoiceBtn: $('#exportChoiceBtn'), sendBtn: $('#sendBtn'), releaseMessage: $('#releaseMessage'), dxfState: $('#dxfState'), releaseDownloads: $('#releaseDownloads'),
+  purgeJobBtn: $('#purgeJobBtn'), deleteCodeDialog: $('#deleteCodeDialog'), deleteCodeForm: $('#deleteCodeForm'), deleteCodeDisplay: $('#deleteCodeDisplay'), deleteKeypad: $('#deleteKeypad'), deleteCodeError: $('#deleteCodeError'),
 };
 
 const API = {
   jobs: '/.netlify/functions/jobs',
   files: '/.netlify/functions/job-file',
   analyse: '/.netlify/functions/analyse-drawing',
+  access: '/.netlify/functions/access',
 };
 const CACHE_KEY = 'quick-dxf-unsynced-v1';
 let saveTimer = null;
 let saving = false;
 let backendOnline = false;
+let authenticated = false;
 const activeAnalysisPolls = new Set();
 
 const initialState = () => ({
@@ -203,7 +208,49 @@ function hydrateJob(job) {
 }
 
 function setEditable(enabled) {
-  [els.jobRef, els.customerName, els.customerEmail, els.staffName, els.jobDate, els.cameraInput, els.fileInput, els.customerConfirmed, els.signedInput].forEach((el) => { el.disabled = !enabled; });
+  [els.jobRef, els.customerName, els.customerEmail, els.staffName, els.jobDate, els.cameraInput, els.fileInput, els.manualDrawingBtn, els.customerConfirmed, els.signedInput].forEach((el) => { el.disabled = !enabled; });
+}
+
+function makeKeypad(container, display, onSubmit) {
+  let value = '';
+  const show = () => { display.textContent = `${'● '.repeat(value.length)}${'○ '.repeat(6 - value.length)}`.trim(); };
+  const press = async (key) => {
+    if (key === 'clear') value = '';
+    else if (key === '#') { if (value.length === 6) await onSubmit(value, () => { value = ''; show(); }); }
+    else if (value.length < 6) value += key;
+    show();
+  };
+  for (const key of ['1','2','3','4','5','6','7','8','9','clear','0','#']) {
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = `access-key ${key === '#' ? 'submit' : ''}`;
+    button.textContent = key === 'clear' ? 'Clear' : key;
+    button.addEventListener('click', () => press(key));
+    container.appendChild(button);
+  }
+  show();
+  return { reset() { value = ''; show(); } };
+}
+
+async function login(code, reset) {
+  els.accessError.textContent = 'Checking…';
+  try {
+    const response = await fetch(API.access, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || 'Login failed.');
+    authenticated = true; els.accessGate.hidden = true; els.accessError.textContent = '';
+    await checkBackend();
+  } catch (error) { reset(); els.accessError.textContent = error.message; }
+}
+
+async function initialiseAccess() {
+  try {
+    const response = await fetch(API.access, { cache: 'no-store' });
+    const body = await response.json().catch(() => ({}));
+    authenticated = Boolean(response.ok && body.authenticated);
+    els.accessGate.hidden = authenticated;
+    if (authenticated) await checkBackend();
+    else if (body.configured === false) els.accessError.textContent = 'Access protection is not configured on the server.';
+  } catch { els.accessGate.hidden = false; els.accessError.textContent = 'Could not contact the work server.'; }
 }
 
 async function apiJson(url, options = {}) {
@@ -435,6 +482,63 @@ async function addFiles(files) {
   for (const file of files) {
     if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf') || file.type.startsWith('image/')) await addSourceFile(file);
   }
+}
+
+function addManualCutoutRow(values = {}) {
+  const row = document.createElement('fieldset');
+  row.className = 'manual-cutout';
+  row.innerHTML = `<legend>Socket cut-out</legend><div class="manual-cutout-grid">
+    <label>Measure from<select data-field="from"><option value="left">Left</option><option value="right">Right</option></select></label>
+    <label>In from edge (mm)<input data-field="x" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Up from bottom (mm)<input data-field="y" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Length (mm)<input data-field="width" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Height (mm)<input data-field="height" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <button class="button danger-quiet" data-remove-cutout type="button">Remove cut-out</button>
+  </div>`;
+  for (const [key, value] of Object.entries(values)) { const field = row.querySelector(`[data-field="${key}"]`); if (field) field.value = value; }
+  row.querySelector('[data-remove-cutout]').addEventListener('click', () => row.remove());
+  els.manualCutouts.appendChild(row);
+}
+
+function openManualDrawing() {
+  if (isFrozen()) return;
+  els.manualDrawingForm.reset(); els.manualCutouts.innerHTML = ''; els.manualDrawingError.textContent = '';
+  addManualCutoutRow(); els.manualDrawingDialog.showModal();
+}
+
+function manualDimension(label, valueMm, role, reference = 'size', fromEdge = 'unknown') {
+  return { id: id(), label, role, valueMm, reference, fromEdge, rawText: `${valueMm} mm`, confidence: 'manual', confirmed: true };
+}
+
+async function createManualDrawing(event) {
+  event.preventDefault();
+  const width = Number(els.manualWidth.value), height = Number(els.manualHeight.value);
+  if (!(width > 0 && height > 0)) { els.manualDrawingError.textContent = 'Enter a positive panel width and height.'; return; }
+  const dimensions = [];
+  const widthDim = manualDimension('Overall width (top / bottom)', width, 'overall');
+  const heightDim = manualDimension('Overall height (left / right)', height, 'overall');
+  dimensions.push(widthDim, heightDim);
+  const features = [];
+  for (const [index, row] of [...els.manualCutouts.children].entries()) {
+    const read = (name) => row.querySelector(`[data-field="${name}"]`)?.value;
+    const from = read('from'); const x = Number(read('x')); const y = Number(read('y')); const cutWidth = Number(read('width')); const cutHeight = Number(read('height'));
+    if (!(x > 0 && y > 0 && cutWidth > 0 && cutHeight > 0)) { els.manualDrawingError.textContent = `Complete all measurements for socket cut-out ${index + 1} with positive values.`; return; }
+    const wd = manualDimension(`Socket cut-out ${index + 1} length`, cutWidth, 'size');
+    const hd = manualDimension(`Socket cut-out ${index + 1} height`, cutHeight, 'size');
+    const xd = manualDimension(`Socket cut-out ${index + 1} in from ${from}`, x, 'position', 'edge', from);
+    const yd = manualDimension(`Socket cut-out ${index + 1} up from bottom`, y, 'position', 'edge', 'bottom');
+    dimensions.push(wd, hd, xd, yd);
+    features.push({ id: `Socket cut-out ${index + 1}`, type: 'rectangular_cutout', quantity: 1, width_mm: cutWidth, height_mm: cutHeight, x_mm: x, x_reference: 'edge', x_from_edge: from, y_mm: y, y_reference: 'edge', y_from_edge: 'bottom', width_dimension_id: wd.id, height_dimension_id: hd.id, diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: xd.id, y_dimension_id: yd.id, touching_edge: 'none', confidence: 'manual', source_note: 'Entered manually' });
+  }
+  const sourceId = id();
+  const source = {
+    id: sourceId, name: `Manual rectangular panel ${state.sources.length + 1}`, kind: 'manual', contentType: 'application/x-quick-dxf-manual', fileId: null, fileKey: null, sourceRevision: state.revision, previewUrl: null, pageCount: null,
+    analysisStatus: 'review', dimensions, analysis: { dimensions: [], parts: [{ id: `panel-${sourceId}`, label: 'Rectangular panel', profile: { type: 'rectangle', width_mm: width, height_mm: height, width_dimension_id: widthDim.id, height_dimension_id: heightDim.id, diameter_dimension_id: null, confidence: 'manual' }, features, dimension_ids: dimensions.map((d) => d.id) }] },
+    analysisResponseId: null, analysisStartedAt: null, analysisModel: 'manual', analysisUsage: null,
+  };
+  state.sources.push(source); state.activeSourceId = source.id; invalidateApproval();
+  source.dimensions.forEach((d) => { d.confirmed = true; });
+  els.manualDrawingDialog.close(); render(); await saveJob({ immediate: true });
 }
 
 async function removeSource(sourceId) {
@@ -743,7 +847,7 @@ function renderSources() {
     const card = document.createElement('button'); card.type = 'button'; card.className = `source-card ${source.id === state.activeSourceId ? 'active' : ''}`;
     const statusClass = source.analysisStatus === 'error' ? 'error' : ['uploading','analysing'].includes(source.analysisStatus) ? 'working' : sourceReady(source) ? 'ready' : '';
     let status = sourceReady(source) ? 'Confirmed' : source.analysisStatus === 'uploading' ? 'Uploading…' : source.analysisStatus === 'analysing' ? 'AI analysing…' : source.analysisStatus === 'error' ? 'Error' : source.analysisStatus === 'awaiting' ? 'Awaiting AI' : `${stats.confirmed}/${stats.total} production confirmed`;
-    card.innerHTML = `${source.previewUrl ? `<img src="${escapeHtml(source.previewUrl)}" alt="">` : '<span class="source-preview-placeholder">PDF</span>'}<span><strong>${drawingLabel(source, index)}</strong><small>${escapeHtml(source.name)}</small><em class="${statusClass}">${status}</em></span>`;
+    card.innerHTML = `${source.previewUrl ? `<img src="${escapeHtml(source.previewUrl)}" alt="">` : `<span class="source-preview-placeholder">${source.kind === 'manual' ? 'MAN' : 'PDF'}</span>`}<span><strong>${drawingLabel(source, index)}</strong><small>${escapeHtml(source.name)}</small><em class="${statusClass}">${status}</em></span>`;
     card.addEventListener('click', () => { state.activeSourceId = source.id; render(); });
     if (!isFrozen()) {
       const remove = document.createElement('span'); remove.className = 'source-remove'; remove.textContent = '×'; remove.title = 'Remove drawing';
@@ -774,7 +878,7 @@ function renderDimensions() {
   const pageInfo = source.pageCount > 1 ? ` · ${source.pageCount} PDF pages` : '';
   els.activeSourceMeta.textContent = `Confirm each production parameter against the source${pageInfo}. Size measurements never need an edge selector; positions explicitly use centre/edge and an outer reference edge.`;
   if (source.previewUrl) { els.drawingPreview.src = source.previewUrl; els.drawingPreview.hidden = false; els.drawingPlaceholder.hidden = true; }
-  else { els.drawingPreview.hidden = true; els.drawingPlaceholder.hidden = false; }
+  else { els.drawingPreview.hidden = true; els.drawingPlaceholder.hidden = false; els.drawingPlaceholder.textContent = source.kind === 'manual' ? 'Measurements entered manually' : 'Source preview unavailable'; }
   renderDigitalDrawing(source);
 
   if (source.analysisStatus === 'error') els.aiState.textContent = `Analysis/upload error: ${source.error || 'unknown error'}`;
@@ -898,6 +1002,7 @@ function renderRelease() {
   els.newRevisionBtn.hidden = !frozen;
   els.sendBtn.hidden = state.status !== 'locked';
   els.sendBtn.disabled = state.status !== 'locked' || !state.dxfFiles.length;
+  els.purgeJobBtn.hidden = !frozen;
 
   if (els.dxfState) {
     els.dxfState.textContent = state.dxfFiles.length ? `${state.dxfFiles.length} deterministic DXF file${state.dxfFiles.length === 1 ? '' : 's'} prepared.` : 'DXF files are generated only when the signed revision is released.';
@@ -962,6 +1067,15 @@ function renderRelease() {
   }
 }
 
+async function purgeCurrentJob(code, reset) {
+  els.deleteCodeError.textContent = 'Deleting…';
+  try {
+    await apiJson(`${API.jobs}?${new URLSearchParams({ id: state.id, permanent: 'true' })}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code }) });
+    try { localStorage.removeItem(CACHE_KEY); } catch {}
+    els.deleteCodeDialog.close(); newJob(true); els.saveState.textContent = 'Job permanently deleted from Quick DXF.'; await refreshJobs();
+  } catch (error) { reset(); els.deleteCodeError.textContent = error.message; }
+}
+
 function render() {
   const statusText = state.status === 'sent' ? 'Sent' : state.status === 'locked' ? 'Locked' : 'Draft';
   els.revisionBadge.textContent = `Revision ${state.revision} · ${statusText}`;
@@ -993,6 +1107,10 @@ els.newJobBtn.addEventListener('click', () => newJob(false));
 els.newRevisionBtn.addEventListener('click', newRevision);
 els.cameraInput.addEventListener('change', async (e) => { await addFiles([...e.target.files]); e.target.value = ''; });
 els.fileInput.addEventListener('change', async (e) => { await addFiles([...e.target.files]); e.target.value = ''; });
+els.manualDrawingBtn.addEventListener('click', openManualDrawing);
+els.addManualCutoutBtn.addEventListener('click', () => addManualCutoutRow());
+els.manualDrawingForm.addEventListener('submit', createManualDrawing);
+document.querySelectorAll('[data-close-manual]').forEach((button) => button.addEventListener('click', () => els.manualDrawingDialog.close()));
 els.analyseBtn.addEventListener('click', () => analyseSource());
 els.addCorrectionBtn.addEventListener('click', () => openDimensionDialog());
 els.pdfBtn.addEventListener('click', createConfirmationPdf);
@@ -1000,7 +1118,13 @@ els.signedInput.addEventListener('change', async (e) => { await attachSignedProo
 els.customerConfirmed.addEventListener('change', () => { state.customerConfirmed = els.customerConfirmed.checked; renderRelease(); scheduleSave(); });
 els.productionBtn.addEventListener('click', () => lockJob('production'));
 els.exportChoiceBtn.addEventListener('click', () => lockJob('export'));
+els.purgeJobBtn.addEventListener('click', () => { els.deleteCodeError.textContent = ''; deleteKeypad.reset(); els.deleteCodeDialog.showModal(); });
+document.querySelectorAll('[data-close-delete]').forEach((button) => button.addEventListener('click', () => els.deleteCodeDialog.close()));
 
 restoreEmergencyCache();
 render();
-checkBackend();
+const loginKeypad = makeKeypad(els.accessKeypad, els.accessDisplay, login);
+const deleteKeypad = makeKeypad(els.deleteKeypad, els.deleteCodeDisplay, purgeCurrentJob);
+els.accessForm.addEventListener('submit', (event) => event.preventDefault());
+els.deleteCodeForm.addEventListener('submit', (event) => event.preventDefault());
+initialiseAccess();

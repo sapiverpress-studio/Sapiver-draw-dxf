@@ -37,7 +37,7 @@ jobs:
       - name: Browser interaction test
         run: |
           python3 -m http.server 4173 >/tmp/quick-dxf-http.log 2>&1 &
-          cat > /tmp/demo-browser.mjs <<'NODE'
+          cat > demo-browser.mjs <<'NODE'
           import puppeteer from 'puppeteer-core';
           import fs from 'node:fs';
           const executablePath = ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].find(fs.existsSync);
@@ -131,4 +131,4 @@ jobs:
           if (errors.length) process.exit(17);
           console.log('browser v5 demo test passed');
           NODE
-          node /tmp/demo-browser.mjs
+          node demo-browser.mjs

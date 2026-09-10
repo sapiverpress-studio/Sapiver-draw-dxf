@@ -1008,6 +1008,7 @@ function renderDimensions() {
   }
   for (const [section, slots] of grouped) {
     const group = document.createElement('section'); group.className = 'feature-group';
+    group.dataset.reviewGroup = slots.every((slot) => slot.ownerType === 'profile') ? 'perimeter' : 'features';
     const heading = document.createElement('div'); heading.className = 'feature-group-head'; heading.innerHTML = `<strong>${escapeHtml(section)}</strong><span>${slots.filter((slot) => dimensionReadyForSlot(slot, dimensionForSlot(source, slot))).length}/${slots.length}</span>`; group.appendChild(heading);
     for (const slot of slots) group.appendChild(makeSlotCard(source, slot));
     els.dimensionList.appendChild(group);

@@ -4,18 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0f172a">
-  <title>Quick DXF</title>
+  <title>Drawing Desk | Halifax Glass</title>
   <meta name="description" content="Trade-counter drawing confirmation and DXF workflow.">
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./job.css">
   <link rel="stylesheet" href="./job-v4.css">
   <link rel="stylesheet" href="./release-fixes.css">
+  <link rel="stylesheet" href="./halifax-glass.css">
 </head>
 <body>
   <div id="accessGate" class="access-gate" role="dialog" aria-modal="true" aria-labelledby="accessTitle">
     <form id="accessForm" class="access-card">
       <p class="eyebrow">Protected access</p>
-      <h1 id="accessTitle">Quick DXF login</h1>
+      <img class="login-logo" src="./assets/halifaxglass-logo.svg" alt="Halifax Glass">
+      <h1 id="accessTitle">Drawing Desk login</h1>
       <p class="helper">Enter the six-digit code, then press #.</p>
       <output id="accessDisplay" class="access-display" aria-live="polite">○ ○ ○ ○ ○ ○</output>
       <div id="accessKeypad" class="access-keypad" aria-label="Number keypad"></div>
@@ -23,9 +25,9 @@
     </form>
   </div>
   <header class="topbar">
-    <div>
-      <div class="brand">Quick DXF</div>
-      <div class="subbrand">Capture → AI proposal → confirm → sign → share</div>
+    <div class="company-brand">
+      <img class="company-logo" src="./assets/halifaxglass-logo.svg" alt="Halifax Glass">
+      <div class="company-tool"><strong>Drawing Desk</strong><span>DXF preparation and approval</span></div>
     </div>
     <div class="top-status">
       <span id="storageBadge" class="badge neutral">Shared storage: checking</span>
@@ -151,19 +153,32 @@
     </section>
   </main>
 
-  <footer>
-    Production rule: AI proposes. A human confirms every production parameter. Signed revisions are immutable unless an authorised user confirms permanent deletion after saving the job to the work server.
+  <footer class="company-footer">
+    <strong>Halifax Glass · Drawing Desk</strong><span>AI proposes. A human confirms every production parameter before release.</span>
   </footer>
   <dialog id="manualDrawingDialog" class="dimension-dialog manual-drawing-dialog">
     <form id="manualDrawingForm" class="dimension-dialog-card">
-      <div class="dialog-head"><div><p class="eyebrow">Manual drawing</p><h2>Rectangular panel</h2></div><button class="dialog-x" type="button" data-close-manual aria-label="Cancel">×</button></div>
-      <p class="helper">Overall width sets the top and bottom. Overall height sets the left and right.</p>
-      <div class="manual-panel-grid">
+      <div class="dialog-head"><div><p class="eyebrow">Manual drawing</p><h2>Panel shape</h2></div><button class="dialog-x" type="button" data-close-manual aria-label="Cancel">×</button></div>
+      <label>Panel type<select id="manualProfileType"><option value="rectangle">Square / rectangular</option><option value="quadrilateral">Out of square</option></select></label>
+      <p id="manualRectangleHelp" class="helper">Overall width sets the top and bottom. Overall height sets the left and right.</p>
+      <div id="manualRectangleFields" class="manual-panel-grid">
         <label>Top / bottom width (mm)<input id="manualWidth" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
         <label>Left / right height (mm)<input id="manualHeight" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
       </div>
+      <div id="manualQuadrilateralFields" class="manual-panel-grid" hidden>
+        <label>Top length (mm)<input id="manualTop" type="number" min="0.01" step="0.01" inputmode="decimal"></label>
+        <label>Bottom length (mm)<input id="manualBottom" type="number" min="0.01" step="0.01" inputmode="decimal"></label>
+        <label>Left length (mm)<input id="manualLeft" type="number" min="0.01" step="0.01" inputmode="decimal"></label>
+        <label>Right length (mm)<input id="manualRight" type="number" min="0.01" step="0.01" inputmode="decimal"></label>
+        <label>90° corner<select id="manualRightAngle1"><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+        <label>Second 90° indication (optional)<select id="manualRightAngle2"><option value="none">None shown</option><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+      </div>
       <div class="manual-cutout-head"><h3>Socket cut-outs</h3><button id="addManualCutoutBtn" class="button quiet" type="button">Add another cut-out</button></div>
       <div id="manualCutouts" class="manual-cutouts"></div>
+      <div class="manual-cutout-head"><h3>Corner cut-outs</h3><button id="addCornerCutoutBtn" class="button quiet" type="button">Add corner cut-out</button></div>
+      <div id="manualCornerCutouts" class="manual-cutouts"></div>
+      <div class="manual-cutout-head"><h3>Edge notches</h3><button id="addEdgeNotchBtn" class="button quiet" type="button">Add edge notch</button></div>
+      <div id="manualEdgeNotches" class="manual-cutouts"></div>
       <p id="manualDrawingError" class="access-error" aria-live="assertive"></p>
       <div class="dialog-actions"><button class="button quiet" type="button" data-close-manual>Cancel</button><button class="button primary" type="submit">Create drawing</button></div>
     </form>

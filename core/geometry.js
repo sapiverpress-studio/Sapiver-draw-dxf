@@ -177,11 +177,24 @@ function solveQuadrilateral(lengths, rightAngles, label, errors) {
   return normalised.map(p=>point(p.x-minX,p.y-minY));
 }
 
+function solveTwoSquareBottomPanel(lengths, label, errors) {
+  if (![lengths.bottom, lengths.left, lengths.right].every(finitePositive)) {
+    errors.push(`${label}: bottom, left and right lengths are required when both bottom corners are 90°.`);
+    return null;
+  }
+  return [point(0, 0), point(lengths.bottom, 0), point(lengths.bottom, lengths.right), point(0, lengths.left)];
+}
+
 function polygonCentroid(points) { return point(points.reduce((s,p)=>s+p.x,0)/points.length,points.reduce((s,p)=>s+p.y,0)/points.length); }
 
 function buildNotchedBoundary(basePoints, notches, dimensionMap, label, errors) {
   const cornerCuts=new Map(), edgeCuts=new Map();
   for (const feature of notches) {
+    if (feature.radius_dimension_id || finitePositive(feature.radius_mm)) {
+      const radius=resolveDimension(dimensionMap,feature.radius_dimension_id,`${label} / ${feature.id} internal radius`,errors);
+      if (radius) errors.push(`${label} / ${feature.id}: radiused boundary notches are not yet supported; DXF blocked to prevent replacement with a sharp corner.`);
+      continue;
+    }
     const width=resolveDimension(dimensionMap,feature.width_dimension_id,`${label} / ${feature.id} width`,errors);
     const depth=resolveDimension(dimensionMap,feature.depth_dimension_id,`${label} / ${feature.id} depth`,errors);
     if (!width||!depth) continue;
@@ -302,11 +315,15 @@ function compilePart(part, dimensionMap, errors) {
     outer = { type: 'polyline', points: rectanglePoints(0, 0, width, height), closed: true, role: 'outer', label };
   } else if (profileSpec.type === 'quadrilateral') {
     const resolved={};
-    for(const side of ['top','bottom','left','right']) resolved[side]=resolveDimension(dimensionMap,profileSpec[`${side}_dimension_id`],`${label} ${side} length`,errors);
+    const rightAngles=profileSpec.right_angle_corners||[];
+    const derivedTop=rightAngles.includes('bottom-left')&&rightAngles.includes('bottom-right')&&!profileSpec.top_dimension_id&&!finitePositive(profileSpec.top_mm);
+    const requiredSides=derivedTop?['bottom','left','right']:['top','bottom','left','right'];
+    for(const side of requiredSides) resolved[side]=resolveDimension(dimensionMap,profileSpec[`${side}_dimension_id`],`${label} ${side} length`,errors);
     if(Object.values(resolved).some((d)=>!d)) return null;
     const lengths=Object.fromEntries(Object.entries(resolved).map(([k,d])=>[k,Number(d.valueMm)]));
-    const points=solveQuadrilateral(lengths,profileSpec.right_angle_corners||[],label,errors); if(!points)return null;
-    profile={type:'quadrilateral',points,lengths,rightAngleCorners:profileSpec.right_angle_corners||[]};
+    if(derivedTop) lengths.top=Math.hypot(lengths.bottom,lengths.right-lengths.left);
+    const points=derivedTop?solveTwoSquareBottomPanel(lengths,label,errors):solveQuadrilateral(lengths,rightAngles,label,errors); if(!points)return null;
+    profile={type:'quadrilateral',points,lengths,rightAngleCorners:rightAngles,derivedTop};
     outer={type:'polyline',points,closed:true,role:'outer',label};
   } else if (profileSpec.type === 'circle') {
     const dd = resolveDimension(dimensionMap, profileSpec.diameter_dimension_id, `${label} overall diameter`, errors);

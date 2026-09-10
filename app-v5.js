@@ -1001,6 +1001,14 @@ function renderDimensions() {
   els.reviewProgress.textContent = `${stats.confirmed} / ${stats.total} confirmed`;
   els.dimensionEmpty.hidden = stats.total > 0 || source.dimensions.length > 0;
 
+  const uncertainties = Array.isArray(source.analysis?.uncertainties) ? source.analysis.uncertainties.filter(Boolean) : [];
+  if (uncertainties.length) {
+    const questions = document.createElement('section');
+    questions.className = 'feature-group auxiliary-group analysis-questions';
+    questions.innerHTML = `<div class="feature-group-head"><strong>Clarification needed</strong><span>${uncertainties.length}</span></div>${uncertainties.map((question) => `<p class="small"><strong>${escapeHtml(question)}</strong></p>`).join('')}<p class="small muted">Check the proposed drawing and correct only the affected measurement below.</p>`;
+    els.dimensionList.appendChild(questions);
+  }
+
   const grouped = new Map();
   for (const slot of stats.slots) {
     if (!grouped.has(slot.section)) grouped.set(slot.section, []);

@@ -55,6 +55,48 @@ const photographedGeometry = compileSourceGeometry(photographedStep);
 assert.equal(photographedGeometry.ok, true, photographedGeometry.errors.join('\n'));
 assert.equal(photographedGeometry.parts[0].entities.length, 2, 'DXF geometry must contain one notched outline and one socket cut-out');
 assert.ok(photographedGeometry.parts[0].entities[0].points.some((point) => point.x === 1000 && point.y === 250), 'top-right step must be present in the outline');
+
+const taperedPhoto = {
+  dimensions:[
+    dim('bottom',1750), dim('left',550), dim('right',600), dim('notch-width',30), dim('notch-depth',30),
+  ],
+  analysis:{parts:[{id:'tapered-step',label:'Tapered stepped panel',profile:{
+    type:'quadrilateral',top_mm:null,bottom_mm:1750,left_mm:550,right_mm:600,
+    top_dimension_id:null,bottom_dimension_id:'bottom',left_dimension_id:'left',right_dimension_id:'right',
+    right_angle_corners:['bottom-left','bottom-right'],
+  },features:[{id:'Top-right corner cut-out',type:'corner_notch',quantity:1,corner:'top-right',width_mm:30,depth_mm:30,width_dimension_id:'notch-width',depth_dimension_id:'notch-depth'}]}]},
+};
+repairGeometryLinks(taperedPhoto);
+assert.equal(reviewStats(taperedPhoto).total,5,'derived tapered top must not request an invented top measurement');
+const taperedGeometry=compileSourceGeometry(taperedPhoto);
+assert.equal(taperedGeometry.ok,true,taperedGeometry.errors.join('\n'));
+assert.equal(Math.round(taperedGeometry.parts[0].profile.lengths.top*100)/100,1750.71,'top length must be derived from confirmed constraints');
+assert.deepEqual(taperedGeometry.parts[0].profile.points.slice(0,4),[{x:0,y:0},{x:1750,y:0},{x:1750,y:600},{x:0,y:550}]);
+const taperedDxf=buildDxf(taperedGeometry.parts[0].entities);
+assert.equal((taperedDxf.match(/\r\nPOLYLINE\r\n/g)||[]).length,1,'tapered notched panel must export as one continuous DXF perimeter');
+assert.match(taperedDxf,/\r\n10\r\n1750\r\n20\r\n570\r\n/,'30 mm top-right notch must lower the confirmed 600 mm right side to 570 mm');
+
+const unlinkedPhotoAnalysis = {
+  dimensions:[
+    {id:'photo-bottom',label:'Overall horizontal width / bottom edge of p1',role:'overall',valueMm:1750,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'photo-left',label:'Left vertical side of p1',role:'size',valueMm:550,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'photo-right',label:'Right vertical side from bottom to top ledge of p1',role:'size',valueMm:600,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'photo-notch-width',label:'Top-right corner notch horizontal width',role:'size',valueMm:30,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'photo-notch-depth',label:'Top-right corner notch vertical depth',role:'size',valueMm:30,reference:'size',fromEdge:'unknown',confirmed:false},
+  ],
+  analysis:{parts:[{id:'p1',label:'p1',profile:{type:'irregular',right_angle_corners:['bottom-left','bottom-right']},features:[
+    {id:'Top-right corner notch',type:'corner_notch',quantity:1,corner:'top-right',width_mm:null,depth_mm:null,width_dimension_id:null,depth_dimension_id:null},
+  ]}]},
+};
+repairGeometryLinks(unlinkedPhotoAnalysis);
+const repairedPhotoProfile=unlinkedPhotoAnalysis.analysis.parts[0].profile;
+assert.equal(repairedPhotoProfile.type,'quadrilateral','two conventional bottom square marks must repair the tapered profile');
+assert.equal(repairedPhotoProfile.bottom_dimension_id,'photo-bottom');
+assert.equal(repairedPhotoProfile.left_dimension_id,'photo-left');
+assert.equal(repairedPhotoProfile.right_dimension_id,'photo-right');
+assert.equal(unlinkedPhotoAnalysis.analysis.parts[0].features[0].width_dimension_id,'photo-notch-width','obvious notch width must auto-link');
+assert.equal(unlinkedPhotoAnalysis.analysis.parts[0].features[0].depth_dimension_id,'photo-notch-depth','obvious notch depth must auto-link');
+assert.equal(reviewStats(unlinkedPhotoAnalysis).total,5);
 assert.ok(Math.abs(compiled.parts[0].bounds.width-500)<0.001);
 assert.ok(Math.abs(compiled.parts[0].bounds.height-300)<0.001);
 

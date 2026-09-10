@@ -27,6 +27,7 @@ assert.match(html, /id="manualDrawingBtn"/, 'manual drawing entry must be presen
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
 assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(app, /dataset\.reviewGroup/, 'review groups must explicitly identify perimeter and feature sections');
+assert.match(app, /Clarification needed/, 'real AI ambiguities must be shown as focused operator questions');
 assert.match(html, /id="purgeJobBtn"/, 'protected permanent deletion control must be present');
 assert.match(html, /assets\/halifaxglass-logo\.svg/, 'Halifax Glass logo must be present in the tool header');
 assert.match(html, /halifax-glass\.css/, 'Halifax Glass visual theme must be loaded');

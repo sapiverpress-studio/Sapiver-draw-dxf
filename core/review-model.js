@@ -41,7 +41,12 @@ function pushProfileSlots(slots, part, partIndex) {
   } else if (profile.type === 'circle') {
     slots.push({ ...common, key: `p${partIndex}:profile:diameter`, parameter: 'diameter', field: 'diameter_dimension_id', valueField: 'diameter_mm', kind: 'size', label: 'Overall diameter' });
   } else if (profile.type === 'quadrilateral') {
-    for (const side of ['top', 'bottom', 'left', 'right']) slots.push({ ...common, key:`p${partIndex}:profile:${side}`, parameter:side, field:`${side}_dimension_id`, valueField:`${side}_mm`, kind:'size', label:`${side[0].toUpperCase()}${side.slice(1)} length` });
+    const rightAngles = profile.right_angle_corners || [];
+    const derivedTop = rightAngles.includes('bottom-left') && rightAngles.includes('bottom-right') && !profile.top_dimension_id && !finitePositive(profile.top_mm);
+    for (const side of ['top', 'bottom', 'left', 'right']) {
+      if (side === 'top' && derivedTop) continue;
+      slots.push({ ...common, key:`p${partIndex}:profile:${side}`, parameter:side, field:`${side}_dimension_id`, valueField:`${side}_mm`, kind:'size', label:`${side[0].toUpperCase()}${side.slice(1)} length` });
+    }
   }
 }
 
@@ -52,6 +57,7 @@ function pushFeatureSlots(slots, part, partIndex, feature, featureIndex) {
     slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:width`, parameter:'width', field:'width_dimension_id', valueField:'width_mm', kind:'size', label:`${name} width` });
     slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:depth`, parameter:'depth', field:'depth_dimension_id', valueField:'depth_mm', kind:'size', label:`${name} depth` });
     if (feature.type === 'edge_notch') slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:offset`, parameter:'offset', field:'offset_dimension_id', valueField:'offset_mm', kind:'size', label:`${name} position along edge` });
+    if (feature.radius_dimension_id || finitePositive(feature.radius_mm)) slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:radius`, parameter:'radius', field:'radius_dimension_id', valueField:'radius_mm', kind:'size', label:`${name} internal radius` });
     return;
   }
   if (['rectangular_cutout', 'slot', 'notch', 'other'].includes(feature.type)) {
@@ -151,8 +157,60 @@ function repairSteppedRectangleProfiles(source) {
   }
 }
 
+function oneSemanticDimension(dimensions, pattern, exclude = null) {
+  const matches = dimensions.filter((dimension) => finitePositive(dimension.valueMm) && pattern.test(dimension.label || '') && !(exclude?.test(dimension.label || '')));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function repairTwoSquareTaperedProfiles(source) {
+  const dimensions = Array.isArray(source?.dimensions) ? source.dimensions : [];
+  const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
+  for (const part of parts) {
+    const profile = part?.profile || {};
+    if (['rectangle', 'circle', 'quadrilateral'].includes(profile.type)) continue;
+    const angles = profile.right_angle_corners || [];
+    if (!(angles.includes('bottom-left') && angles.includes('bottom-right'))) continue;
+    const bottom = oneSemanticDimension(dimensions, /\b(overall|bottom)\b.*\b(width|horizontal|bottom|edge)\b|\b(width|horizontal)\b.*\bbottom\b/i);
+    const left = oneSemanticDimension(dimensions, /\bleft\b.*\b(height|vertical|side|edge)\b|\b(height|vertical|side)\b.*\bleft\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
+    const right = oneSemanticDimension(dimensions, /\bright\b.*\b(height|vertical|side|edge)\b|\b(height|vertical|side)\b.*\bright\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
+    if (!bottom || !left || !right || new Set([bottom.id, left.id, right.id]).size !== 3) continue;
+    Object.assign(profile, {
+      type:'quadrilateral', top_mm:null, top_dimension_id:null,
+      bottom_mm:Number(bottom.valueMm), bottom_dimension_id:bottom.id,
+      left_mm:Number(left.valueMm), left_dimension_id:left.id,
+      right_mm:Number(right.valueMm), right_dimension_id:right.id,
+    });
+  }
+}
+
+function semanticScore(slot, dimension) {
+  const label = String(dimension?.label || '').toLowerCase();
+  let score = 0;
+  const words = {
+    width:/\b(width|horizontal|length)\b/, height:/\b(height|vertical)\b/, depth:/\b(depth|deep)\b/,
+    offset:/\b(offset|position|from)\b/, diameter:/\b(diameter|dia|ø|hole)\b/,
+    top:/\btop\b/, bottom:/\bbottom\b/, left:/\bleft\b/, right:/\bright\b/,
+    x:/\b(x|horizontal|left|right)\b/, y:/\b(y|vertical|bottom|top|up)\b/,
+  };
+  if (words[slot.parameter]?.test(label)) score += 4;
+  if (slot.ownerType === 'profile' && /\b(overall|panel|side|edge)\b/.test(label)) score += 2;
+  if (slot.ownerType === 'feature') {
+    const featureWord = slot.featureType === 'rectangular_cutout' ? /\b(socket|cut[ -]?out|opening)\b/
+      : slot.featureType === 'corner_notch' ? /\b(corner|notch|cut[ -]?out)\b/
+        : slot.featureType === 'edge_notch' ? /\b(edge|notch|recess)\b/ : /\b(hole|slot|cut[ -]?out)\b/;
+    if (featureWord.test(label)) score += 2;
+  }
+  if (slot.kind === 'position' && dimension.fromEdge !== 'unknown') {
+    const allowed = slot.axis === 'x' ? ['left', 'right'] : ['top', 'bottom'];
+    if (allowed.includes(dimension.fromEdge)) score += 3;
+    else score -= 6;
+  }
+  return score;
+}
+
 export function repairGeometryLinks(source) {
   if (!source?.analysis || !Array.isArray(source.dimensions)) return source;
+  repairTwoSquareTaperedProfiles(source);
   repairSteppedRectangleProfiles(source);
   const dimensions = source.dimensions;
   const byId = new Map(dimensions.map((d) => [d.id, d]));
@@ -184,6 +242,19 @@ export function repairGeometryLinks(source) {
         owner[slot.field] = candidates[0].id;
         claimed.add(candidates[0].id);
         applySlotSemantics(source, slot, candidates[0]);
+        continue;
+      }
+    }
+
+    if (!current) {
+      const ranked = dimensions
+        .filter((d) => !claimed.has(d.id) && finitePositive(d.valueMm) && compatibleRole(slot, d))
+        .map((d) => ({ dimension:d, score:semanticScore(slot, d) }))
+        .sort((a, b) => b.score - a.score);
+      if (ranked[0]?.score >= 4 && (!ranked[1] || ranked[0].score - ranked[1].score >= 2)) {
+        owner[slot.field] = ranked[0].dimension.id;
+        claimed.add(ranked[0].dimension.id);
+        applySlotSemantics(source, slot, ranked[0].dimension);
         continue;
       }
     }

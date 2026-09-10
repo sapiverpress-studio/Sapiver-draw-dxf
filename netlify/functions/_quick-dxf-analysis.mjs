@@ -17,10 +17,13 @@ Rules:
 - Use millimetres only when supported by the drawing/context. Do not silently convert unknown units.
 - Focus on simple flat 2D geometry: outer profiles, holes, slots, notches, rectangular cut-outs and simple arcs/radii.
 - Use profile type quadrilateral only when all four side lengths are figured and at least one corner is explicitly marked 90 degrees. Record the named 90-degree corners.
+- A small square, an L-shaped square marker, or a box drawn inside a corner is a conventional 90-degree indication. Record its named corner in right_angle_corners even when “90°” is not written. Do not treat an unmarked corner as 90°.
+- A tapered four-sided panel may omit the top length when the bottom length, left height and right height are figured and both bottom corners are marked 90°. In that exact case use quadrilateral, link bottom/left/right, leave top_mm and top_dimension_id null, and record bottom-left plus bottom-right in right_angle_corners. The deterministic engine will calculate the sloping top from those confirmed constraints.
 - Use corner_notch for a rectangular cut removed from a named panel corner. Use edge_notch for a rectangular recess into a named edge, with its offset measured from the left for top/bottom edges or from the bottom for left/right edges.
 - A stepped or L-shaped outline caused only by a rectangular corner removal is not an irregular profile. Model the uncut maximum envelope as a rectangle using explicitly figured overall width and height, then model the removed corner as corner_notch. For example, a 1500 overall bottom, 500 overall left height, 1000 remaining top, 500 notch width and 250 notch depth is a 1500 x 500 rectangle with a 500 x 250 top-right corner_notch. Do not infer missing closure dimensions unless the figured measurements explicitly support them.
 - Keep an internal socket opening as rectangular_cutout even when the outer profile also contains a corner_notch or edge_notch. Link all profile, notch and internal cut-out parameters to their exact dimension ids.
 - Preserve ambiguous handwritten values in raw_text and lower confidence rather than guessing.
+- Write each genuine ambiguity as a short direct question in uncertainties, naming the affected measurement. For example: “Does 600 mm mean the full right-hand height, or the height to the notch ledge?” Do not create generic uncertainty messages for measurements whose dimension lines and targets are clear.
 - Model confidence is advisory only. Human confirmation is mandatory for every production dimension.
 
 Important geometry-linking rule: numeric geometry values are proposals only. The final deterministic DXF engine will ignore those numeric values and use the human-confirmed dimension referenced by each *_dimension_id field.`;

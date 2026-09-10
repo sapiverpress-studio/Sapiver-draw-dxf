@@ -45,14 +45,17 @@ function pushProfileSlots(slots, part, partIndex) {
     const derivedTop = rightAngles.includes('bottom-left') && rightAngles.includes('bottom-right') && !profile.top_dimension_id && !finitePositive(profile.top_mm);
     for (const side of ['top', 'bottom', 'left', 'right']) {
       if (side === 'top' && derivedTop) continue;
-      slots.push({ ...common, key:`p${partIndex}:profile:${side}`, parameter:side, field:`${side}_dimension_id`, valueField:`${side}_mm`, kind:'size', label:`${side[0].toUpperCase()}${side.slice(1)} length` });
+      const shoulderLabel = profile.side_heights_to_notch_shoulders && ['left', 'right'].includes(side)
+        ? `${side[0].toUpperCase()}${side.slice(1)} outer height to notch shoulder`
+        : `${side[0].toUpperCase()}${side.slice(1)} length`;
+      slots.push({ ...common, key:`p${partIndex}:profile:${side}`, parameter:side, field:`${side}_dimension_id`, valueField:`${side}_mm`, kind:'size', label:shoulderLabel });
     }
   }
 }
 
 function pushFeatureSlots(slots, part, partIndex, feature, featureIndex) {
   const name = featureName(feature, featureIndex);
-  const common = { partIndex, featureIndex, section: `${partName(part, partIndex)} · ${name}${featureLocationHint(feature)}`, ownerType: 'feature', featureType: feature.type };
+  const common = { partIndex, featureIndex, section: `${partName(part, partIndex)} · ${name}${featureLocationHint(feature)}`, ownerType: 'feature', featureType: feature.type, corner:feature.corner };
   if (['corner_notch', 'edge_notch'].includes(feature.type)) {
     slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:width`, parameter:'width', field:'width_dimension_id', valueField:'width_mm', kind:'size', label:`${name} width` });
     slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:depth`, parameter:'depth', field:'depth_dimension_id', valueField:'depth_mm', kind:'size', label:`${name} depth` });
@@ -162,6 +165,31 @@ function oneSemanticDimension(dimensions, pattern, exclude = null) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function repairDoubleTopShoulderProfiles(source) {
+  const dimensions = Array.isArray(source?.dimensions) ? source.dimensions : [];
+  const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
+  for (const part of parts) {
+    const profile = part?.profile || {};
+    if (['rectangle', 'circle', 'quadrilateral'].includes(profile.type)) continue;
+    const features = part.features || [];
+    const leftNotch = features.find((feature) => feature.type === 'corner_notch' && feature.corner === 'top-left');
+    const rightNotch = features.find((feature) => feature.type === 'corner_notch' && feature.corner === 'top-right');
+    if (!leftNotch || !rightNotch) continue;
+    const bottom = oneSemanticDimension(dimensions, /\bbottom\b.*\b(width|horizontal|length)\b|\b(width|horizontal|length)\b.*\bbottom\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
+    const left = oneSemanticDimension(dimensions, /\bleft\b.*\b(outer|height|vertical|side)\b.*\b(shoulder|ledge|notch)|\bleft\b.*\b(outer|height|vertical|side)\b/i, /\b(width|inward|horizontal|depth|rise)\b/i);
+    const right = oneSemanticDimension(dimensions, /\bright\b.*\b(outer|height|vertical|side)\b.*\b(shoulder|ledge|notch)|\bright\b.*\b(outer|height|vertical|side)\b/i, /\b(width|inward|horizontal|depth|rise)\b/i);
+    if (!bottom || !left || !right || new Set([bottom.id, left.id, right.id]).size !== 3) continue;
+    Object.assign(profile, {
+      type:'quadrilateral', top_mm:null, top_dimension_id:null,
+      bottom_mm:Number(bottom.valueMm), bottom_dimension_id:bottom.id,
+      left_mm:Number(left.valueMm), left_dimension_id:left.id,
+      right_mm:Number(right.valueMm), right_dimension_id:right.id,
+      right_angle_corners:['bottom-left','bottom-right'],
+      side_heights_to_notch_shoulders:true,
+    });
+  }
+}
+
 function repairTwoSquareTaperedProfiles(source) {
   const dimensions = Array.isArray(source?.dimensions) ? source.dimensions : [];
   const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
@@ -170,7 +198,7 @@ function repairTwoSquareTaperedProfiles(source) {
     if (['rectangle', 'circle', 'quadrilateral'].includes(profile.type)) continue;
     const angles = profile.right_angle_corners || [];
     if (!(angles.includes('bottom-left') && angles.includes('bottom-right'))) continue;
-    const bottom = oneSemanticDimension(dimensions, /\b(overall|bottom)\b.*\b(width|horizontal|bottom|edge)\b|\b(width|horizontal)\b.*\bbottom\b/i);
+    const bottom = oneSemanticDimension(dimensions, /\bbottom\b.*\b(width|horizontal|length)\b|\b(width|horizontal|length)\b.*\bbottom\b/i);
     const left = oneSemanticDimension(dimensions, /\bleft\b.*\b(height|vertical|side|edge)\b|\b(height|vertical|side)\b.*\bleft\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
     const right = oneSemanticDimension(dimensions, /\bright\b.*\b(height|vertical|side|edge)\b|\b(height|vertical|side)\b.*\bright\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
     if (!bottom || !left || !right || new Set([bottom.id, left.id, right.id]).size !== 3) continue;
@@ -187,7 +215,7 @@ function semanticScore(slot, dimension) {
   const label = String(dimension?.label || '').toLowerCase();
   let score = 0;
   const words = {
-    width:/\b(width|horizontal|length)\b/, height:/\b(height|vertical)\b/, depth:/\b(depth|deep)\b/,
+    width:/\b(width|horizontal|length|inward)\b/, height:/\b(height|vertical)\b/, depth:/\b(depth|deep|rise|vertical)\b/,
     offset:/\b(offset|position|from)\b/, diameter:/\b(diameter|dia|ø|hole)\b/,
     top:/\btop\b/, bottom:/\bbottom\b/, left:/\bleft\b/, right:/\bright\b/,
     x:/\b(x|horizontal|left|right)\b/, y:/\b(y|vertical|bottom|top|up)\b/,
@@ -199,6 +227,9 @@ function semanticScore(slot, dimension) {
       : slot.featureType === 'corner_notch' ? /\b(corner|notch|cut[ -]?out)\b/
         : slot.featureType === 'edge_notch' ? /\b(edge|notch|recess)\b/ : /\b(hole|slot|cut[ -]?out)\b/;
     if (featureWord.test(label)) score += 2;
+    if (slot.corner?.includes('left') && /\bleft\b/.test(label)) score += 3;
+    if (slot.corner?.includes('right') && /\bright\b/.test(label)) score += 3;
+    if (slot.corner?.includes('top') && /\btop\b/.test(label)) score += 1;
   }
   if (slot.kind === 'position' && dimension.fromEdge !== 'unknown') {
     const allowed = slot.axis === 'x' ? ['left', 'right'] : ['top', 'bottom'];
@@ -210,6 +241,7 @@ function semanticScore(slot, dimension) {
 
 export function repairGeometryLinks(source) {
   if (!source?.analysis || !Array.isArray(source.dimensions)) return source;
+  repairDoubleTopShoulderProfiles(source);
   repairTwoSquareTaperedProfiles(source);
   repairSteppedRectangleProfiles(source);
   const dimensions = source.dimensions;

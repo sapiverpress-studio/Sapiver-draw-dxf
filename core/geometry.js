@@ -321,8 +321,33 @@ function compilePart(part, dimensionMap, errors) {
     for(const side of requiredSides) resolved[side]=resolveDimension(dimensionMap,profileSpec[`${side}_dimension_id`],`${label} ${side} length`,errors);
     if(Object.values(resolved).some((d)=>!d)) return null;
     const lengths=Object.fromEntries(Object.entries(resolved).map(([k,d])=>[k,Number(d.valueMm)]));
-    if(derivedTop) lengths.top=Math.hypot(lengths.bottom,lengths.right-lengths.left);
-    const points=derivedTop?solveTwoSquareBottomPanel(lengths,label,errors):solveQuadrilateral(lengths,rightAngles,label,errors); if(!points)return null;
+    let shoulderBoundary=null;
+    if (derivedTop && profileSpec.side_heights_to_notch_shoulders) {
+      const leftNotch=(part.features||[]).find((feature)=>feature.type==='corner_notch'&&feature.corner==='top-left');
+      const rightNotch=(part.features||[]).find((feature)=>feature.type==='corner_notch'&&feature.corner==='top-right');
+      if (!leftNotch || !rightNotch) {
+        errors.push(`${label}: both upper corner notches are required when side heights finish at notch shoulders.`);
+        return null;
+      }
+      const lw=resolveDimension(dimensionMap,leftNotch.width_dimension_id,`${label} / ${leftNotch.id} width`,errors);
+      const ld=resolveDimension(dimensionMap,leftNotch.depth_dimension_id,`${label} / ${leftNotch.id} depth`,errors);
+      const rw=resolveDimension(dimensionMap,rightNotch.width_dimension_id,`${label} / ${rightNotch.id} width`,errors);
+      const rd=resolveDimension(dimensionMap,rightNotch.depth_dimension_id,`${label} / ${rightNotch.id} depth`,errors);
+      if (!lw||!ld||!rw||!rd) return null;
+      const leftWidth=Number(lw.valueMm),leftDepth=Number(ld.valueMm),rightWidth=Number(rw.valueMm),rightDepth=Number(rd.valueMm);
+      if (leftWidth+rightWidth>=lengths.bottom-EPS) {
+        errors.push(`${label}: upper corner cut-outs consume the whole panel width.`);
+        return null;
+      }
+      const leftTop=lengths.left+leftDepth,rightTop=lengths.right+rightDepth;
+      lengths.top=Math.hypot(lengths.bottom-leftWidth-rightWidth,rightTop-leftTop);
+      shoulderBoundary=[
+        point(0,0), point(lengths.bottom,0), point(lengths.bottom,lengths.right),
+        point(lengths.bottom-rightWidth,lengths.right), point(lengths.bottom-rightWidth,rightTop),
+        point(leftWidth,leftTop), point(leftWidth,lengths.left), point(0,lengths.left),
+      ];
+    } else if(derivedTop) lengths.top=Math.hypot(lengths.bottom,lengths.right-lengths.left);
+    const points=shoulderBoundary || (derivedTop?solveTwoSquareBottomPanel(lengths,label,errors):solveQuadrilateral(lengths,rightAngles,label,errors)); if(!points)return null;
     profile={type:'quadrilateral',points,lengths,rightAngleCorners:rightAngles,derivedTop};
     outer={type:'polyline',points,closed:true,role:'outer',label};
   } else if (profileSpec.type === 'circle') {
@@ -336,7 +361,9 @@ function compilePart(part, dimensionMap, errors) {
     return null;
   }
 
-  const boundaryFeatures=(part.features||[]).filter((feature)=>['corner_notch','edge_notch'].includes(feature.type));
+  const boundaryFeatures=profileSpec.side_heights_to_notch_shoulders
+    ? (part.features||[]).filter((feature)=>feature.type==='edge_notch')
+    : (part.features||[]).filter((feature)=>['corner_notch','edge_notch'].includes(feature.type));
   if(boundaryFeatures.length && outer.type==='polyline') outer.points=buildNotchedBoundary(outer.points,boundaryFeatures,dimensionMap,label,errors);
   const entities = [outer];
   const compiledFeatures = new Map();

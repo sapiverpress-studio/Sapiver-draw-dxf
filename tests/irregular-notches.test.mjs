@@ -97,6 +97,43 @@ assert.equal(repairedPhotoProfile.right_dimension_id,'photo-right');
 assert.equal(unlinkedPhotoAnalysis.analysis.parts[0].features[0].width_dimension_id,'photo-notch-width','obvious notch width must auto-link');
 assert.equal(unlinkedPhotoAnalysis.analysis.parts[0].features[0].depth_dimension_id,'photo-notch-depth','obvious notch depth must auto-link');
 assert.equal(reviewStats(unlinkedPhotoAnalysis).total,5);
+
+const doubleShoulderPhoto = {
+  dimensions:[
+    {id:'ds-bottom',label:'Overall bottom width of panel',role:'overall',valueMm:1850,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-left',label:'Left outer vertical side from bottom edge to left shoulder ledge',role:'size',valueMm:600,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-right',label:'Right outer vertical side from bottom edge to right shoulder ledge',role:'size',valueMm:610,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-lw',label:'Top-left notch horizontal width',role:'size',valueMm:14,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-ld',label:'Top-left notch vertical rise',role:'size',valueMm:20,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-rw',label:'Top-right notch horizontal width',role:'size',valueMm:25,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-rd',label:'Top-right notch vertical depth',role:'size',valueMm:35,reference:'size',fromEdge:'unknown',confirmed:false},
+  ],
+  analysis:{parts:[{id:'double-shoulder',label:'Double shoulder tapered panel',profile:{type:'irregular',right_angle_corners:[]},features:[
+    {id:'Left top notch',type:'corner_notch',quantity:1,corner:'top-left',width_mm:null,depth_mm:null,width_dimension_id:null,depth_dimension_id:null},
+    {id:'Right top notch',type:'corner_notch',quantity:1,corner:'top-right',width_mm:null,depth_mm:null,width_dimension_id:null,depth_dimension_id:null},
+  ]}]},
+};
+repairGeometryLinks(doubleShoulderPhoto);
+const doubleShoulderPart=doubleShoulderPhoto.analysis.parts[0];
+assert.equal(doubleShoulderPart.profile.type,'quadrilateral','two upper shoulder notches must repair to deterministic tapered geometry');
+assert.equal(doubleShoulderPart.profile.side_heights_to_notch_shoulders,true);
+assert.equal(doubleShoulderPart.profile.bottom_dimension_id,'ds-bottom');
+assert.equal(doubleShoulderPart.profile.left_dimension_id,'ds-left');
+assert.equal(doubleShoulderPart.profile.right_dimension_id,'ds-right');
+assert.equal(doubleShoulderPart.features[0].width_dimension_id,'ds-lw');
+assert.equal(doubleShoulderPart.features[0].depth_dimension_id,'ds-ld');
+assert.equal(doubleShoulderPart.features[1].width_dimension_id,'ds-rw');
+assert.equal(doubleShoulderPart.features[1].depth_dimension_id,'ds-rd');
+assert.equal(reviewStats(doubleShoulderPhoto).total,7,'only the seven figured production measurements should require confirmation');
+for (const dimension of doubleShoulderPhoto.dimensions) dimension.confirmed=true;
+const doubleShoulderGeometry=compileSourceGeometry(doubleShoulderPhoto);
+assert.equal(doubleShoulderGeometry.ok,true,doubleShoulderGeometry.errors.join('\n'));
+const doubleShoulderPoints=doubleShoulderGeometry.parts[0].entities[0].points;
+assert.deepEqual(doubleShoulderPoints,[
+  {x:0,y:0},{x:1850,y:0},{x:1850,y:610},{x:1825,y:610},
+  {x:1825,y:645},{x:14,y:620},{x:14,y:600},{x:0,y:600},
+]);
+assert.equal((buildDxf(doubleShoulderGeometry.parts[0].entities).match(/\r\nPOLYLINE\r\n/g)||[]).length,1,'double-shoulder panel must export as one continuous DXF perimeter');
 assert.ok(Math.abs(compiled.parts[0].bounds.width-500)<0.001);
 assert.ok(Math.abs(compiled.parts[0].bounds.height-300)<0.001);
 

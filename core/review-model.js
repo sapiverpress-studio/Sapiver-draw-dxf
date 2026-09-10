@@ -267,7 +267,8 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
   line(chunks, ox - 42, oy + drawH, ox, oy + drawH);
   text(chunks, ox - 42, oy + drawH / 2, `${height} mm`, `text-anchor="middle" font-weight="700" transform="rotate(-90 ${ox - 42} ${oy + drawH / 2})"`);
 
-  (part.features || []).forEach((feature, featureIndex) => {
+  const featureBounds = new Map();
+  for (const [featureIndex, feature] of (part.features || []).entries()) {
     const widthS = slotFor(slots, partIndex, featureIndex, 'width');
     const heightS = slotFor(slots, partIndex, featureIndex, 'height');
     const diameterS = slotFor(slots, partIndex, featureIndex, 'diameter');
@@ -288,12 +289,14 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
       if (xReady) bits.push(`X ${xd.valueMm}`);
       if (yReady) bits.push(`Y ${yd.valueMm}`);
       if (bits.length) text(chunks, canvasX, yOffset + 350 + featureIndex * 18, `${name}: ${bits.join(' · ')} mm confirmed · remaining parameters pending`, 'fill="#475467" font-size="12"');
-      return;
+      continue;
     }
 
-    const cxMm = axisCentre(width, fw, xd);
+    const previousBounds = feature.x_relative_to_feature_id ? featureBounds.get(feature.x_relative_to_feature_id) : null;
+    const cxMm = previousBounds ? previousBounds.maxX + Number(xd.valueMm) + fw / 2 : axisCentre(width, fw, xd);
     const cyMm = axisCentre(height, fh, yd);
-    if (!Number.isFinite(cxMm) || !Number.isFinite(cyMm)) return;
+    if (!Number.isFinite(cxMm) || !Number.isFinite(cyMm)) continue;
+    featureBounds.set(feature.id, { minX: cxMm - fw / 2, maxX: cxMm + fw / 2 });
     const fx = ox + (cxMm - fw / 2) * scale;
     const fy = oy + drawH - (cyMm + fh / 2) * scale;
     const fwp = fw * scale;
@@ -316,10 +319,10 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
 
     const xTargetMm = xd.reference === 'centre' ? cxMm : xd.fromEdge === 'left' ? cxMm - fw / 2 : cxMm + fw / 2;
     const xTarget = ox + xTargetMm * scale;
-    const xStart = xd.fromEdge === 'left' ? ox : ox + drawW;
+    const xStart = previousBounds ? ox + previousBounds.maxX * scale : xd.fromEdge === 'left' ? ox : ox + drawW;
     const xDimY = Math.min(oy + drawH + 52 + featureIndex * 15, yOffset + 380);
     line(chunks, xStart, xDimY, xTarget, xDimY, true);
-    text(chunks, (xStart + xTarget) / 2, xDimY - 6, `${xd.valueMm} mm ${xd.reference} from ${xd.fromEdge}`, 'text-anchor="middle" font-size="11"');
+    text(chunks, (xStart + xTarget) / 2, xDimY - 6, previousBounds ? `${xd.valueMm} mm gap from previous cut-out` : `${xd.valueMm} mm ${xd.reference} from ${xd.fromEdge}`, 'text-anchor="middle" font-size="11"');
 
     const yTargetMm = yd.reference === 'centre' ? cyMm : yd.fromEdge === 'bottom' ? cyMm - fh / 2 : cyMm + fh / 2;
     const yTarget = oy + drawH - yTargetMm * scale;
@@ -327,7 +330,7 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
     const yDimX = ox + drawW + 58 + featureIndex * 14;
     line(chunks, yDimX, yStart, yDimX, yTarget, true);
     text(chunks, yDimX + 8, (yStart + yTarget) / 2, `${yd.valueMm} mm ${yd.reference} from ${yd.fromEdge}`, `font-size="11" transform="rotate(-90 ${yDimX + 8} ${(yStart + yTarget) / 2})" text-anchor="middle"`);
-  });
+  }
 }
 
 function drawCirclePart(chunks, source, part, partIndex, yOffset, slots) {

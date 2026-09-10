@@ -25,6 +25,7 @@ assert.match(share, /navigator\.canShare/, 'file sharing capability must be chec
 assert.match(html, /id="accessKeypad"/, 'six-digit login keypad must be present');
 assert.match(html, /id="manualDrawingBtn"/, 'manual drawing entry must be present');
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
+assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(html, /id="purgeJobBtn"/, 'protected permanent deletion control must be present');
 assert.match(app, /permanent: 'true'/, 'permanent deletion must call the protected server operation');
 assert.match(css, /img\[hidden\]\{display:none!important\}/, 'hidden preview images must stay hidden even when image CSS sets display:block');

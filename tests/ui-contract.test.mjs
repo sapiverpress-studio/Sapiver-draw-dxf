@@ -27,6 +27,8 @@ assert.match(html, /id="manualDrawingBtn"/, 'manual drawing entry must be presen
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
 assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(html, /id="purgeJobBtn"/, 'protected permanent deletion control must be present');
+assert.match(html, /assets\/halifaxglass-logo\.svg/, 'Halifax Glass logo must be present in the tool header');
+assert.match(html, /halifax-glass\.css/, 'Halifax Glass visual theme must be loaded');
 assert.match(app, /permanent: 'true'/, 'permanent deletion must call the protected server operation');
 assert.match(css, /img\[hidden\]\{display:none!important\}/, 'hidden preview images must stay hidden even when image CSS sets display:block');
 

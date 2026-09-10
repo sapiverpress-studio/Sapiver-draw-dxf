@@ -1,3 +1,5 @@
+import { compileSourceGeometry, geometryToSvg } from './geometry.js';
+
 const EPS = 1e-6;
 
 function finitePositive(value) {
@@ -38,12 +40,20 @@ function pushProfileSlots(slots, part, partIndex) {
     slots.push({ ...common, key: `p${partIndex}:profile:height`, parameter: 'height', field: 'height_dimension_id', valueField: 'height_mm', kind: 'size', label: 'Overall height' });
   } else if (profile.type === 'circle') {
     slots.push({ ...common, key: `p${partIndex}:profile:diameter`, parameter: 'diameter', field: 'diameter_dimension_id', valueField: 'diameter_mm', kind: 'size', label: 'Overall diameter' });
+  } else if (profile.type === 'quadrilateral') {
+    for (const side of ['top', 'bottom', 'left', 'right']) slots.push({ ...common, key:`p${partIndex}:profile:${side}`, parameter:side, field:`${side}_dimension_id`, valueField:`${side}_mm`, kind:'size', label:`${side[0].toUpperCase()}${side.slice(1)} length` });
   }
 }
 
 function pushFeatureSlots(slots, part, partIndex, feature, featureIndex) {
   const name = featureName(feature, featureIndex);
   const common = { partIndex, featureIndex, section: `${partName(part, partIndex)} · ${name}${featureLocationHint(feature)}`, ownerType: 'feature', featureType: feature.type };
+  if (['corner_notch', 'edge_notch'].includes(feature.type)) {
+    slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:width`, parameter:'width', field:'width_dimension_id', valueField:'width_mm', kind:'size', label:`${name} width` });
+    slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:depth`, parameter:'depth', field:'depth_dimension_id', valueField:'depth_mm', kind:'size', label:`${name} depth` });
+    if (feature.type === 'edge_notch') slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:offset`, parameter:'offset', field:'offset_dimension_id', valueField:'offset_mm', kind:'size', label:`${name} position along edge` });
+    return;
+  }
   if (['rectangular_cutout', 'slot', 'notch', 'other'].includes(feature.type)) {
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:width`, parameter: 'width', field: 'width_dimension_id', valueField: 'width_mm', kind: 'size', label: `${name} width` });
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:height`, parameter: 'height', field: 'height_dimension_id', valueField: 'height_mm', kind: 'size', label: `${name} height` });
@@ -355,6 +365,11 @@ export function reviewDrawingSvg(source) {
   const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
   if (!parts.length) return '';
   const slots = geometrySlots(source);
+  const needsCompiledOutline = parts.some((part) => part?.profile?.type === 'quadrilateral' || (part.features || []).some((feature) => ['corner_notch','edge_notch'].includes(feature.type)));
+  if (needsCompiledOutline && slots.length && slots.every((slot) => dimensionReadyForSlot(slot, dimensionForSlot(source, slot)))) {
+    const geometry = compileSourceGeometry(source);
+    if (geometry.ok) return geometryToSvg(geometry, { width:900, height:430, padding:42 });
+  }
   const height = Math.max(430, parts.length * 430);
   const chunks = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 ${height}" role="img" aria-label="Confirmed digital drawing">`, markerDef(), '<rect width="100%" height="100%" fill="white"/>'];
   parts.forEach((part, partIndex) => {

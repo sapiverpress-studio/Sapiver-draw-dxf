@@ -689,6 +689,33 @@ function fillEdgeOptions(select, axis, selected = 'unknown') {
   select.value = values.some(([v]) => v === selected) ? selected : 'unknown';
 }
 
+function previousFeatureForSlot(source, slot) {
+  if (slot?.ownerType !== 'feature' || slot.axis !== 'x' || !(slot.featureIndex > 0)) return null;
+  return source?.analysis?.parts?.[slot.partIndex]?.features?.[slot.featureIndex - 1] || null;
+}
+
+function positionReferenceOptions(canUsePrevious) {
+  return `<option value="unknown">Choose centre or edge</option><option value="centre">Centre</option><option value="edge">Edge</option>${canUsePrevious ? '<option value="previous">Edge of previous cut-out</option>' : ''}`;
+}
+
+function applyPositionReference(source, slot, dimension, referenceValue, edgeValue) {
+  const owner = source?.analysis?.parts?.[slot.partIndex]?.features?.[slot.featureIndex];
+  const previous = previousFeatureForSlot(source, slot);
+  if (referenceValue === 'previous' && owner && previous) {
+    dimension.reference = 'edge';
+    dimension.fromEdge = 'left';
+    dimension.relativeToFeatureId = previous.id;
+    owner.x_reference = 'edge';
+    owner.x_from_edge = 'left';
+    owner.x_relative_to_feature_id = previous.id;
+    return;
+  }
+  dimension.reference = referenceValue;
+  dimension.fromEdge = edgeValue;
+  delete dimension.relativeToFeatureId;
+  if (owner && slot.axis === 'x') delete owner.x_relative_to_feature_id;
+}
+
 function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) {
   const source = activeSource();
   if (!source || isFrozen()) return;
@@ -727,10 +754,14 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
     if (slot) description.value = slot.label;
     positionFields.hidden = !slot || slot.kind !== 'position';
     if (slot?.kind === 'position') {
-      reference.value = ['centre','edge'].includes(existingDimension?.reference) ? existingDimension.reference : 'centre';
+      const previous = previousFeatureForSlot(source, slot);
+      reference.innerHTML = positionReferenceOptions(Boolean(previous));
+      reference.value = existingDimension?.relativeToFeatureId && previous ? 'previous' : ['centre','edge'].includes(existingDimension?.reference) ? existingDimension.reference : 'centre';
       fillEdgeOptions(fromEdge, slot.axis, existingDimension?.fromEdge || 'unknown');
+      fromEdge.disabled = reference.value === 'previous';
     }
   }
+  reference.onchange = () => { fromEdge.disabled = reference.value === 'previous'; };
   target.onchange = syncTarget;
   syncTarget();
 
@@ -738,7 +769,7 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
     const numeric = Number(value.value);
     if (!(numeric > 0)) { value.focus(); return; }
     const slot = target.value === 'additional' ? null : slotByKey(source, target.value);
-    if (slot?.kind === 'position' && fromEdge.value === 'unknown') { fromEdge.focus(); return; }
+    if (slot?.kind === 'position' && reference.value !== 'previous' && fromEdge.value === 'unknown') { fromEdge.focus(); return; }
     let d = existingDimension;
     if (!d) {
       d = { id: `manual-${id()}`, label: '', role: 'unknown', valueMm: null, reference: 'unknown', fromEdge: 'unknown', rawText: '', confidence: 'manual', confirmed: false };
@@ -751,7 +782,7 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
     if (slot) {
       setSlotDimensionId(source, slot, d.id);
       if (slot.kind === 'size') { d.reference = 'size'; d.fromEdge = 'unknown'; }
-      else { d.role = 'position'; d.reference = reference.value; d.fromEdge = fromEdge.value; }
+      else { d.role = 'position'; applyPositionReference(source, slot, d, reference.value, fromEdge.value); }
     } else {
       d.reference = 'size'; d.fromEdge = 'unknown'; d.role = 'unknown';
     }
@@ -792,8 +823,10 @@ function makeSlotCard(source, slot) {
   let fromEdge = null;
   if (slot.kind === 'position') {
     const controls = document.createElement('div'); controls.className = 'position-controls';
-    ref = document.createElement('select'); ref.className = 'dimension-ref'; ref.innerHTML = '<option value="unknown">Choose centre or edge</option><option value="centre">Centre</option><option value="edge">Edge</option>'; ref.value = d.reference || 'unknown'; ref.disabled = isFrozen();
+    const canUsePrevious = Boolean(previousFeatureForSlot(source, slot));
+    ref = document.createElement('select'); ref.className = 'dimension-ref'; ref.innerHTML = positionReferenceOptions(canUsePrevious); ref.value = d.relativeToFeatureId && canUsePrevious ? 'previous' : d.reference || 'unknown'; ref.disabled = isFrozen();
     fromEdge = document.createElement('select'); fromEdge.className = 'dimension-from-edge'; fillEdgeOptions(fromEdge, slot.axis, d.fromEdge || 'unknown'); fromEdge.disabled = isFrozen();
+    if (ref.value === 'previous') fromEdge.disabled = true;
     controls.append(ref, fromEdge); card.appendChild(controls);
   }
 
@@ -812,7 +845,7 @@ function makeSlotCard(source, slot) {
     if (isFrozen()) return;
     const numeric = Number(value.value); d.valueMm = Number.isFinite(numeric) && numeric > 0 ? numeric : null;
     if (slot.kind === 'size') { d.reference = 'size'; d.fromEdge = 'unknown'; }
-    else { d.reference = ref.value; d.fromEdge = fromEdge.value; }
+    else { applyPositionReference(source, slot, d, ref.value, fromEdge.value); fromEdge.disabled = isFrozen() || ref.value === 'previous'; }
     d.confirmed = false;
     repairGeometryLinks(source); invalidateApproval(); renderRelease(); scheduleSave(); renderDigitalDrawing(source);
     confirmBtn.textContent = 'Confirm'; confirmBtn.classList.remove('confirmed'); card.classList.remove('is-confirmed');
@@ -827,9 +860,9 @@ function makeSlotCard(source, slot) {
     d.valueMm = numeric;
     if (slot.kind === 'size') { d.reference = 'size'; d.fromEdge = 'unknown'; }
     else {
-      if (!['centre','edge'].includes(ref.value)) { ref.focus(); return; }
-      if (fromEdge.value === 'unknown') { fromEdge.focus(); return; }
-      d.reference = ref.value; d.fromEdge = fromEdge.value;
+      if (!['centre','edge','previous'].includes(ref.value)) { ref.focus(); return; }
+      if (ref.value !== 'previous' && fromEdge.value === 'unknown') { fromEdge.focus(); return; }
+      applyPositionReference(source, slot, d, ref.value, fromEdge.value);
     }
     d.confirmed = true; repairGeometryLinks(source); invalidateApproval(); render(); scheduleSave();
   });

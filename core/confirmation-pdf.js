@@ -79,7 +79,9 @@ function drawCompiledGeometry(page, geometry, x, y, width, height, font, fontBol
     }
     const sizeText = part.profile?.type === 'rectangle'
       ? `${part.profile.width} x ${part.profile.height} mm`
-      : `Diameter ${part.profile?.diameter ?? '—'} mm`;
+      : part.profile?.type === 'quadrilateral'
+        ? `T ${part.profile.lengths.top} / B ${part.profile.lengths.bottom} / L ${part.profile.lengths.left} / R ${part.profile.lengths.right} mm`
+        : `Diameter ${part.profile?.diameter ?? '—'} mm`;
     page.drawText(sizeText, { x: cellX + pad, y: cellY + 6, font, size: 7, color: rgb(0.3, 0.3, 0.3) });
   });
   return true;

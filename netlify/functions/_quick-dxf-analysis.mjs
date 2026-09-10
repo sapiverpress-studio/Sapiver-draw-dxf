@@ -18,6 +18,8 @@ Rules:
 - Focus on simple flat 2D geometry: outer profiles, holes, slots, notches, rectangular cut-outs and simple arcs/radii.
 - Use profile type quadrilateral only when all four side lengths are figured and at least one corner is explicitly marked 90 degrees. Record the named 90-degree corners.
 - Use corner_notch for a rectangular cut removed from a named panel corner. Use edge_notch for a rectangular recess into a named edge, with its offset measured from the left for top/bottom edges or from the bottom for left/right edges.
+- A stepped or L-shaped outline caused only by a rectangular corner removal is not an irregular profile. Model the uncut maximum envelope as a rectangle using explicitly figured overall width and height, then model the removed corner as corner_notch. For example, a 1500 overall bottom, 500 overall left height, 1000 remaining top, 500 notch width and 250 notch depth is a 1500 x 500 rectangle with a 500 x 250 top-right corner_notch. Do not infer missing closure dimensions unless the figured measurements explicitly support them.
+- Keep an internal socket opening as rectangular_cutout even when the outer profile also contains a corner_notch or edge_notch. Link all profile, notch and internal cut-out parameters to their exact dimension ids.
 - Preserve ambiguous handwritten values in raw_text and lower confidence rather than guessing.
 - Model confidence is advisory only. Human confirmation is mandatory for every production dimension.
 

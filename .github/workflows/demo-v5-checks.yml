@@ -182,7 +182,7 @@ jobs:
           await page.type('#manualTop', '480');
           await page.type('#manualBottom', '500');
           await page.type('#manualLeft', '300');
-          await page.type('#manualRight', '300.6659');
+          await page.type('#manualRight', '300.67');
           await page.select('#manualRightAngle1', 'bottom-left');
           await page.select('#manualRightAngle2', 'top-left');
           await page.click('#manualCutouts .manual-cutout [data-remove-cutout]');

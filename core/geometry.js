@@ -125,7 +125,7 @@ function checkInsideOuter(profile, entity, label, errors) {
   }
 }
 
-function compileFeature(feature, profile, dimensionMap, partLabel, errors) {
+function compileFeature(feature, profile, dimensionMap, compiledFeatures, partLabel, errors) {
   const prefix = `${partLabel} / ${feature.id || feature.type}`;
   if (!['rectangular_cutout', 'circular_hole', 'slot'].includes(feature.type)) {
     errors.push(`${prefix}: ${feature.type} is not yet supported by the deterministic v1 geometry engine.`);
@@ -155,7 +155,17 @@ function compileFeature(feature, profile, dimensionMap, partLabel, errors) {
 
   const totalWidth = profile.type === 'rectangle' ? profile.width : profile.diameter;
   const totalHeight = profile.type === 'rectangle' ? profile.height : profile.diameter;
-  const cx = axisCentre(totalWidth, width, xd, 'x', `${prefix} X position`, errors);
+  let cx;
+  if (feature.x_relative_to_feature_id) {
+    const previous = compiledFeatures.get(feature.x_relative_to_feature_id);
+    if (!previous) {
+      errors.push(`${prefix} X position: previous cut-out ${feature.x_relative_to_feature_id} is missing or invalid.`);
+      return null;
+    }
+    cx = entityBounds(previous).maxX + Number(xd.valueMm) + width / 2;
+  } else {
+    cx = axisCentre(totalWidth, width, xd, 'x', `${prefix} X position`, errors);
+  }
   const cy = axisCentre(totalHeight, height, yd, 'y', `${prefix} Y position`, errors);
   if (cx == null || cy == null) return null;
 
@@ -197,14 +207,18 @@ function compilePart(part, dimensionMap, errors) {
   }
 
   const entities = [outer];
+  const compiledFeatures = new Map();
   for (const feature of part.features || []) {
     const quantity = Math.max(1, Number(feature.quantity) || 1);
     if (quantity !== 1) {
       errors.push(`${label} / ${feature.id || feature.type}: repeated quantity ${quantity} needs individually located features before DXF release.`);
       continue;
     }
-    const entity = compileFeature(feature, profile, dimensionMap, label, errors);
-    if (entity) entities.push(entity);
+    const entity = compileFeature(feature, profile, dimensionMap, compiledFeatures, label, errors);
+    if (entity) {
+      entities.push(entity);
+      compiledFeatures.set(feature.id, entity);
+    }
   }
 
   const bounds = profile.type === 'rectangle'

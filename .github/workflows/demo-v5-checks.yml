@@ -172,9 +172,10 @@ jobs:
             geometryState: document.querySelector('#geometryState')?.textContent?.trim(),
             dimensions: [...document.querySelectorAll('.dimension-title-row strong')].map((x) => x.textContent),
             drawing: decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(',')),
+            hasReviewOption: [...document.querySelectorAll('.feature-dimension')].some((card) => card.querySelector('.dimension-title-row strong')?.textContent?.trim() === 'Socket cut-out 2 X position' && card.querySelector('.dimension-ref option[value="previous"]') && card.querySelector('.dimension-ref')?.value === 'previous'),
           }));
           console.log('MANUAL', JSON.stringify(manual));
-          if (manual.progress !== '10 / 10 confirmed' || !manual.geometryState.includes('Deterministic geometry ready') || !manual.dimensions.some((x) => x.includes('Socket cut-out 2 X position')) || !manual.drawing.includes('150 mm gap from previous cut-out')) process.exit(18);
+          if (manual.progress !== '10 / 10 confirmed' || !manual.geometryState.includes('Deterministic geometry ready') || !manual.hasReviewOption || !manual.drawing.includes('150 mm gap from previous cut-out')) process.exit(18);
 
           await browser.close();
           if (errors.length) process.exit(17);

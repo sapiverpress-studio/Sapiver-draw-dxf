@@ -9,6 +9,7 @@ if (list && progress) {
   }
 
   function isPerimeterGroup(group) {
+    if (group.dataset.reviewGroup) return group.dataset.reviewGroup === 'perimeter';
     const labels = [...group.querySelectorAll('.feature-dimension .dimension-title-row strong')].map((el) => el.textContent.trim().toLowerCase());
     return labels.length > 0 && labels.every((label) => label.startsWith('overall '));
   }

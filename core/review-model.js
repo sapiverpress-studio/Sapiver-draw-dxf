@@ -20,7 +20,8 @@ function featureName(feature, index) {
 
 function featureLocationHint(feature) {
   const hints = [];
-  if (finitePositive(feature?.x_mm) && ['left', 'right'].includes(feature?.x_from_edge)) hints.push(`${Number(feature.x_mm)} mm from ${feature.x_from_edge}`);
+  if (finitePositive(feature?.x_mm) && feature?.x_relative_to_feature_id) hints.push(`${Number(feature.x_mm)} mm gap from previous cut-out`);
+  else if (finitePositive(feature?.x_mm) && ['left', 'right'].includes(feature?.x_from_edge)) hints.push(`${Number(feature.x_mm)} mm from ${feature.x_from_edge}`);
   if (finitePositive(feature?.y_mm) && ['top', 'bottom'].includes(feature?.y_from_edge)) hints.push(`${Number(feature.y_mm)} mm from ${feature.y_from_edge}`);
   return hints.length ? ` · proposed ${hints.join(', ')}` : '';
 }

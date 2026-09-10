@@ -494,16 +494,29 @@ function addManualCutoutRow(values = {}) {
   const row = document.createElement('fieldset');
   row.className = 'manual-cutout';
   row.innerHTML = `<legend>Socket cut-out</legend><div class="manual-cutout-grid">
-    <label>Measure from<select data-field="from"><option value="left">Left</option><option value="right">Right</option></select></label>
-    <label>In from edge (mm)<input data-field="x" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Measure from<select data-field="from"><option value="left">Left</option><option value="right">Right</option><option value="previous">Previous cut-out</option></select></label>
+    <label data-x-label>In from edge (mm)<input data-field="x" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
     <label>Up from bottom (mm)<input data-field="y" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
     <label>Length (mm)<input data-field="width" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
     <label>Height (mm)<input data-field="height" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
     <button class="button danger-quiet" data-remove-cutout type="button">Remove cut-out</button>
   </div>`;
   for (const [key, value] of Object.entries(values)) { const field = row.querySelector(`[data-field="${key}"]`); if (field) field.value = value; }
-  row.querySelector('[data-remove-cutout]').addEventListener('click', () => row.remove());
+  row.querySelector('[data-remove-cutout]').addEventListener('click', () => { row.remove(); refreshManualCutoutReferences(); });
+  row.querySelector('[data-field="from"]').addEventListener('change', refreshManualCutoutReferences);
   els.manualCutouts.appendChild(row);
+  refreshManualCutoutReferences();
+}
+
+function refreshManualCutoutReferences() {
+  [...els.manualCutouts.children].forEach((row, index) => {
+    const select = row.querySelector('[data-field="from"]');
+    const previousOption = select?.querySelector('option[value="previous"]');
+    if (previousOption) previousOption.disabled = index === 0;
+    if (index === 0 && select?.value === 'previous') select.value = 'left';
+    const label = row.querySelector('[data-x-label]');
+    if (label?.firstChild) label.firstChild.textContent = select?.value === 'previous' ? 'Gap from previous cut-out (mm)' : 'In from edge (mm)';
+  });
 }
 
 function openManualDrawing() {
@@ -529,12 +542,15 @@ async function createManualDrawing(event) {
     const read = (name) => row.querySelector(`[data-field="${name}"]`)?.value;
     const from = read('from'); const x = Number(read('x')); const y = Number(read('y')); const cutWidth = Number(read('width')); const cutHeight = Number(read('height'));
     if (!(x > 0 && y > 0 && cutWidth > 0 && cutHeight > 0)) { els.manualDrawingError.textContent = `Complete all measurements for socket cut-out ${index + 1} with positive values.`; return; }
+    if (from === 'previous' && index === 0) { els.manualDrawingError.textContent = 'The first socket cut-out must be measured from the left or right panel edge.'; return; }
     const wd = manualDimension(`Socket cut-out ${index + 1} length`, cutWidth, 'size');
     const hd = manualDimension(`Socket cut-out ${index + 1} height`, cutHeight, 'size');
-    const xd = manualDimension(`Socket cut-out ${index + 1} in from ${from}`, x, 'position', 'edge', from);
+    const xd = manualDimension(from === 'previous' ? `Socket cut-out ${index + 1} gap from previous cut-out` : `Socket cut-out ${index + 1} in from ${from}`, x, 'position', 'edge', from === 'previous' ? 'left' : from);
     const yd = manualDimension(`Socket cut-out ${index + 1} up from bottom`, y, 'position', 'edge', 'bottom');
     dimensions.push(wd, hd, xd, yd);
-    features.push({ id: `Socket cut-out ${index + 1}`, type: 'rectangular_cutout', quantity: 1, width_mm: cutWidth, height_mm: cutHeight, x_mm: x, x_reference: 'edge', x_from_edge: from, y_mm: y, y_reference: 'edge', y_from_edge: 'bottom', width_dimension_id: wd.id, height_dimension_id: hd.id, diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: xd.id, y_dimension_id: yd.id, touching_edge: 'none', confidence: 'manual', source_note: 'Entered manually' });
+    const previousFeature = features[index - 1];
+    if (from === 'previous') xd.relativeToFeatureId = previousFeature.id;
+    features.push({ id: `Socket cut-out ${index + 1}`, type: 'rectangular_cutout', quantity: 1, width_mm: cutWidth, height_mm: cutHeight, x_mm: x, x_reference: 'edge', x_from_edge: from === 'previous' ? 'left' : from, x_relative_to_feature_id: from === 'previous' ? previousFeature.id : null, y_mm: y, y_reference: 'edge', y_from_edge: 'bottom', width_dimension_id: wd.id, height_dimension_id: hd.id, diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: xd.id, y_dimension_id: yd.id, touching_edge: 'none', confidence: 'manual', source_note: 'Entered manually' });
   }
   const sourceId = id();
   const source = {

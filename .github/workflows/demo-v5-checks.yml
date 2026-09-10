@@ -27,7 +27,9 @@ jobs:
           node --check netlify/lib/access-auth.mjs
           node --check netlify/lib/job-delete.mjs
       - name: Existing deterministic geometry tests
-        run: node tests/geometry.test.mjs
+        run: |
+          node tests/geometry.test.mjs
+          node tests/irregular-notches.test.mjs
       - name: Feature-aware review tests
         run: node tests/review-model.test.mjs
       - name: Draft deletion tests

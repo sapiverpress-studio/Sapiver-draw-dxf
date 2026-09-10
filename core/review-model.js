@@ -128,8 +128,32 @@ function applySlotSemantics(source, slot, dimension) {
   }
 }
 
+function repairSteppedRectangleProfiles(source) {
+  const dimensions = Array.isArray(source?.dimensions) ? source.dimensions : [];
+  const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
+  for (const part of parts) {
+    const profile = part?.profile || {};
+    if (['rectangle', 'circle', 'quadrilateral'].includes(profile.type)) continue;
+    if (!(part.features || []).some((feature) => ['corner_notch', 'edge_notch'].includes(feature.type))) continue;
+
+    const overall = dimensions.filter((dimension) => dimension.role === 'overall' && finitePositive(dimension.valueMm));
+    const widthCandidates = overall.filter((dimension) => /\boverall\b.*\b(width|bottom)\b|\b(width|bottom)\b.*\boverall\b/i.test(dimension.label || ''));
+    const heightCandidates = overall.filter((dimension) => /\boverall\b.*\b(height|left|right)\b|\b(height|left|right)\b.*\boverall\b/i.test(dimension.label || ''));
+    if (widthCandidates.length !== 1 || heightCandidates.length !== 1 || widthCandidates[0].id === heightCandidates[0].id) continue;
+
+    profile.type = 'rectangle';
+    profile.width_mm = Number(widthCandidates[0].valueMm);
+    profile.height_mm = Number(heightCandidates[0].valueMm);
+    profile.width_dimension_id = widthCandidates[0].id;
+    profile.height_dimension_id = heightCandidates[0].id;
+    profile.diameter_mm = null;
+    profile.diameter_dimension_id = null;
+  }
+}
+
 export function repairGeometryLinks(source) {
   if (!source?.analysis || !Array.isArray(source.dimensions)) return source;
+  repairSteppedRectangleProfiles(source);
   const dimensions = source.dimensions;
   const byId = new Map(dimensions.map((d) => [d.id, d]));
   const slots = geometrySlots(source);
@@ -150,7 +174,12 @@ export function repairGeometryLinks(source) {
     }
 
     if (finitePositive(proposal)) {
-      const candidates = dimensions.filter((d) => !claimed.has(d.id) && finitePositive(d.valueMm) && nearlyEqual(d.valueMm, proposal) && compatibleRole(slot, d));
+      const candidates = dimensions.filter((d) => {
+        if (claimed.has(d.id) || !finitePositive(d.valueMm) || !nearlyEqual(d.valueMm, proposal) || !compatibleRole(slot, d)) return false;
+        if (slot.kind !== 'position' || d.fromEdge === 'unknown') return true;
+        const allowed = slot.axis === 'x' ? ['left', 'right'] : ['top', 'bottom'];
+        return allowed.includes(d.fromEdge);
+      });
       if (candidates.length === 1) {
         owner[slot.field] = candidates[0].id;
         claimed.add(candidates[0].id);

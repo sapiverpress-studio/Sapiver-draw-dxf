@@ -123,7 +123,7 @@ function drawDimensionTable(page, source, font, fontBold, startY, includeFooter 
     page.drawText(descLines[0] || '', { x: cols[0], y, font, size: 7.5 });
     if (descLines[1]) page.drawText(descLines[1], { x: cols[0], y: y - 9, font, size: 7.5 });
     page.drawText(`${d.valueMm ?? '—'} mm`, { x: cols[1], y, font, size: 7.5 });
-    const ref = String(d.reference || 'unknown').toUpperCase() + (d.fromEdge && d.fromEdge !== 'unknown' ? ` FROM ${String(d.fromEdge).toUpperCase()}` : '');
+    const ref = d.relativeToFeatureId ? 'EDGE FROM PREVIOUS CUT-OUT' : String(d.reference || 'unknown').toUpperCase() + (d.fromEdge && d.fromEdge !== 'unknown' ? ` FROM ${String(d.fromEdge).toUpperCase()}` : '');
     page.drawText(ref, { x: cols[2], y, font, size: 7.5 });
     y -= descLines[1] ? 22 : 15;
     page.drawLine({ start: { x, y: y + 5 }, end: { x: cols[3], y: y + 5 }, thickness: 0.25 });

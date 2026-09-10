@@ -31,7 +31,7 @@ GENERAL RULES:
 - Use millimetres only when supported by the drawing/context. Do not silently convert unknown units.
 - Focus on simple flat 2D geometry: outer profiles, holes, slots, notches, rectangular cut-outs and simple arcs/radii.
 - Use profile type quadrilateral only when all four side lengths are figured and at least one corner is explicitly marked 90 degrees. Record the named 90-degree corners.
-- A small square, an L-shaped square marker, or a box drawn inside a corner is a conventional 90-degree indication. Record its named corner in right_angle_corners even when “90°” is not written. Do not treat an unmarked corner as 90°.
+- A small square, an L-shaped square marker, or a box drawn inside a corner is an explicit 90-degree indication. Also recognise ordinary workshop drawing convention: when a straight bottom is clearly drawn horizontal and its adjoining outer sides are clearly intended vertical, treat those bottom corners as 90° unless a slope, angle, conflicting dimension or visibly non-orthogonal construction contradicts that interpretation. Hand-drawn line wobble alone is not a reason to reject the intended square corner. Record inferred conventional corners with medium confidence and ask for confirmation, but still build and link the proposed geometry.
 - A tapered four-sided panel may omit the top length when the bottom length, left height and right height are figured and both bottom corners are marked 90°. In that exact case use quadrilateral, link bottom/left/right, leave top_mm and top_dimension_id null, and record bottom-left plus bottom-right in right_angle_corners. The deterministic engine will calculate the sloping top from those confirmed constraints.
 - When a tapered panel has rectangular notches at both top corners and the figured left/right vertical sides end at the lower notch shoulders, use quadrilateral with those actual shoulder heights in left/right, set side_heights_to_notch_shoulders true, leave the top unfigured, and create top-left and top-right corner_notch features. Link the obvious bottom and shoulder dimensions directly; do not leave them as unassigned reads. A low-confidence handwritten notch figure must still be linked so the operator can correct it during confirmation.
 - Use corner_notch for a rectangular cut removed from a named panel corner. Use edge_notch for a rectangular recess into a named edge, with its offset measured from the left for top/bottom edges or from the bottom for left/right edges.
@@ -51,6 +51,7 @@ FINAL SELF-CHECK BEFORE RETURNING JSON:
 - A sloping drawn boundary remains sloping; do not replace it with a horizontal line.
 - Low-confidence handwriting remains linked to the most clearly indicated target and is presented for correction.
 - analysis_checks.all_clear_figures_linked is false if any clear production figure would otherwise appear only as an unlinked read.
+- If a dimension target names a geometry path such as p1.profile.bottom, p1.profile.left shoulder height, or p1.features.f1.width, the matching *_dimension_id field MUST contain that dimension's id. Never return a named geometry target while leaving its matching geometry link null.
 
 Important geometry-linking rule: numeric geometry values are proposals only. The final deterministic DXF engine will ignore those numeric values and use the human-confirmed dimension referenced by each *_dimension_id field.`;
 
@@ -169,6 +170,72 @@ export const ANALYSIS_SCHEMA = {
   },
   required: ['units', 'drawing_label', 'parts', 'dimensions', 'uncertainties', 'requires_human_review', 'production_ready', 'analysis_checks', 'summary'],
 };
+
+function normaliseTargetToken(value) {
+  return String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ');
+}
+
+function profileTargetField(token) {
+  if (/\bbottom\b/.test(token)) return 'bottom';
+  if (/\btop\b/.test(token)) return 'top';
+  if (/\bleft\b/.test(token) && /\b(shoulder|height|side|edge|length)\b/.test(token)) return 'left';
+  if (/\bright\b/.test(token) && /\b(shoulder|height|side|edge|length)\b/.test(token)) return 'right';
+  if (/\b(width|overall width)\b/.test(token)) return 'width';
+  if (/\b(height|overall height)\b/.test(token)) return 'height';
+  if (/\b(diameter|dia)\b/.test(token)) return 'diameter';
+  return null;
+}
+
+function featureTargetField(token) {
+  if (/\b(diameter|dia)\b/.test(token)) return 'diameter';
+  if (/\b(radius|rad)\b/.test(token)) return 'radius';
+  if (/\b(depth|deep|rise)\b/.test(token)) return 'depth';
+  if (/\b(offset)\b/.test(token)) return 'offset';
+  if (/\b(x|horizontal position)\b/.test(token)) return 'x';
+  if (/\b(y|vertical position)\b/.test(token)) return 'y';
+  if (/\b(width|horizontal|inward)\b/.test(token)) return 'width';
+  if (/\b(height|vertical)\b/.test(token)) return 'height';
+  return null;
+}
+
+export function linkExplicitDimensionTargets(extraction) {
+  if (!extraction || typeof extraction !== 'object') return extraction;
+  const parts = Array.isArray(extraction.parts) ? extraction.parts : [];
+  const dimensions = Array.isArray(extraction.dimensions) ? extraction.dimensions : [];
+  for (const dimension of dimensions) {
+    const target = String(dimension?.target || '').trim();
+    if (!target || !dimension?.id || !(Number(dimension.value) > 0)) continue;
+    const lower = target.toLowerCase();
+    for (let partIndex=0; partIndex<parts.length; partIndex+=1) {
+      const part=parts[partIndex], partNames=[String(part?.id||''),`p${partIndex+1}`].filter(Boolean).map((name)=>name.toLowerCase());
+      const prefix=partNames.find((name)=>lower.startsWith(`${name}.`));
+      if (!prefix) continue;
+      const remainder=target.slice(prefix.length+1);
+      if (/^profile\./i.test(remainder)) {
+        const field=profileTargetField(normaliseTargetToken(remainder.replace(/^profile\./i,'')));
+        if (field && part.profile) {
+          part.profile[`${field}_dimension_id`]=dimension.id;
+          part.profile[`${field}_mm`]=Number(dimension.value);
+        }
+        break;
+      }
+      const featureMatch=remainder.match(/^features?\.([^.]*)\.(.+)$/i);
+      if (!featureMatch) break;
+      const featureToken=normaliseTargetToken(featureMatch[1]);
+      const feature=(part.features||[]).find((candidate,index)=>{
+        const names=[candidate?.id,`f${index+1}`,String(index+1)].map(normaliseTargetToken);
+        return names.includes(featureToken);
+      });
+      const field=featureTargetField(normaliseTargetToken(featureMatch[2]));
+      if (feature && field) {
+        feature[`${field}_dimension_id`]=dimension.id;
+        feature[`${field}_mm`]=Number(dimension.value);
+      }
+      break;
+    }
+  }
+  return extraction;
+}
 
 export function enforceAnalysisChecks(extraction) {
   if (!extraction || typeof extraction !== 'object') return extraction;

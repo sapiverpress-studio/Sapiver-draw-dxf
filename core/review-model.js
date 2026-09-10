@@ -175,7 +175,7 @@ function repairDoubleTopShoulderProfiles(source) {
     const leftNotch = features.find((feature) => feature.type === 'corner_notch' && feature.corner === 'top-left');
     const rightNotch = features.find((feature) => feature.type === 'corner_notch' && feature.corner === 'top-right');
     if (!leftNotch || !rightNotch) continue;
-    const bottom = oneSemanticDimension(dimensions, /\bbottom\b.*\b(width|horizontal|length)\b|\b(width|horizontal|length)\b.*\bbottom\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
+    const bottom = oneSemanticDimension(dimensions, /\bprofile[. ]bottom\b|\bbottom\b.*\b(width|horizontal|length)\b|\b(width|horizontal|length)\b.*\bbottom\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
     const left = oneSemanticDimension(dimensions, /\bleft\b.*\b(outer|height|vertical|side)\b.*\b(shoulder|ledge|notch)|\bleft\b.*\b(outer|height|vertical|side)\b/i, /\b(width|inward|horizontal|depth|rise)\b/i);
     const right = oneSemanticDimension(dimensions, /\bright\b.*\b(outer|height|vertical|side)\b.*\b(shoulder|ledge|notch)|\bright\b.*\b(outer|height|vertical|side)\b/i, /\b(width|inward|horizontal|depth|rise)\b/i);
     if (!bottom || !left || !right || new Set([bottom.id, left.id, right.id]).size !== 3) continue;
@@ -198,7 +198,7 @@ function repairTwoSquareTaperedProfiles(source) {
     if (['rectangle', 'circle', 'quadrilateral'].includes(profile.type)) continue;
     const angles = profile.right_angle_corners || [];
     if (!(angles.includes('bottom-left') && angles.includes('bottom-right'))) continue;
-    const bottom = oneSemanticDimension(dimensions, /\bbottom\b.*\b(width|horizontal|length)\b|\b(width|horizontal|length)\b.*\bbottom\b/i);
+    const bottom = oneSemanticDimension(dimensions, /\bprofile[. ]bottom\b|\bbottom\b.*\b(width|horizontal|length)\b|\b(width|horizontal|length)\b.*\bbottom\b/i);
     const left = oneSemanticDimension(dimensions, /\bleft\b.*\b(height|vertical|side|edge)\b|\b(height|vertical|side)\b.*\bleft\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
     const right = oneSemanticDimension(dimensions, /\bright\b.*\b(height|vertical|side|edge)\b|\b(height|vertical|side)\b.*\bright\b/i, /\b(notch|cut[ -]?out|socket|hole)\b/i);
     if (!bottom || !left || !right || new Set([bottom.id, left.id, right.id]).size !== 3) continue;

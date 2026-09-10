@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA, enforceAnalysisChecks } from '../netlify/functions/_quick-dxf-analysis.mjs';
+import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA, enforceAnalysisChecks, linkExplicitDimensionTargets } from '../netlify/functions/_quick-dxf-analysis.mjs';
 
 const requiredInstructions = [
   'trace the complete visible outer perimeter',
@@ -50,5 +50,23 @@ const unsafe = enforceAnalysisChecks({
 assert.equal(unsafe.production_ready,false);
 assert.equal(unsafe.requires_human_review,true);
 assert.ok(unsafe.uncertainties.some((message)=>message.includes('not linked')));
+
+const failedLiveExtraction={
+  parts:[{id:'p1',profile:{type:'irregular',bottom_dimension_id:null,left_dimension_id:null,right_dimension_id:null},features:[
+    {id:'f1',type:'corner_notch',width_dimension_id:null,depth_dimension_id:null},
+  ]}],
+  dimensions:[
+    {id:'d1',value:1850,target:'p1.profile.bottom'},
+    {id:'d2',value:600,target:'p1.profile.left shoulder height'},
+    {id:'d3',value:610,target:'p1.profile.right shoulder height'},
+    {id:'d4',value:14,target:'p1.features.f1.width'},
+  ],
+};
+linkExplicitDimensionTargets(failedLiveExtraction);
+const linkedPart=failedLiveExtraction.parts[0];
+assert.equal(linkedPart.profile.bottom_dimension_id,'d1');
+assert.equal(linkedPart.profile.left_dimension_id,'d2');
+assert.equal(linkedPart.profile.right_dimension_id,'d3');
+assert.equal(linkedPart.features[0].width_dimension_id,'d4');
 
 console.log('geometry-first analyser contract tests passed.');

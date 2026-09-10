@@ -100,9 +100,9 @@ assert.equal(reviewStats(unlinkedPhotoAnalysis).total,5);
 
 const doubleShoulderPhoto = {
   dimensions:[
-    {id:'ds-bottom',label:'Overall bottom width of panel',role:'overall',valueMm:1850,reference:'size',fromEdge:'unknown',confirmed:false},
-    {id:'ds-left',label:'Left outer vertical side from bottom edge to left shoulder ledge',role:'size',valueMm:600,reference:'size',fromEdge:'unknown',confirmed:false},
-    {id:'ds-right',label:'Right outer vertical side from bottom edge to right shoulder ledge',role:'size',valueMm:610,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-bottom',label:'p1.profile.bottom',role:'overall',valueMm:1850,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-left',label:'p1.profile.left shoulder height',role:'size',valueMm:600,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'ds-right',label:'p1.profile.right shoulder height',role:'size',valueMm:610,reference:'size',fromEdge:'unknown',confirmed:false},
     {id:'ds-lw',label:'Top-left notch horizontal width',role:'size',valueMm:14,reference:'size',fromEdge:'unknown',confirmed:false},
     {id:'ds-ld',label:'Top-left notch vertical rise',role:'size',valueMm:20,reference:'size',fromEdge:'unknown',confirmed:false},
     {id:'ds-rw',label:'Top-right notch horizontal width',role:'size',valueMm:25,reference:'size',fromEdge:'unknown',confirmed:false},

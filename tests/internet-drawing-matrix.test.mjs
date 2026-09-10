@@ -42,7 +42,7 @@ for (const test of cases) {
 }
 
 const prompt = fs.readFileSync(new URL('../netlify/functions/_quick-dxf-analysis.mjs', import.meta.url), 'utf8');
-assert.match(prompt,/small square[\s\S]*conventional 90-degree indication/i,'AI prompt must recognise conventional square right-angle marks');
+assert.match(prompt,/small square[\s\S]*explicit 90-degree indication/i,'AI prompt must recognise square right-angle marks');
 assert.match(prompt,/bottom length, left height and right height[\s\S]*both bottom corners/i,'AI prompt must recognise constrained tapered panels without a written top length');
 
 console.log(JSON.stringify({total:results.length,supported:results.filter((r)=>r.result==='supported').length,blocked:results.filter((r)=>r.result==='blocked').length,issues:results.filter((r)=>r.issue).length,results},null,2));

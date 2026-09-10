@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
-import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA, enforceAnalysisChecks } from './_quick-dxf-analysis.mjs';
+import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA, enforceAnalysisChecks, linkExplicitDimensionTargets } from './_quick-dxf-analysis.mjs';
 import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../lib/openai-auth.mjs';
 import { requireAuth } from '../lib/access-auth.mjs';
 
@@ -32,7 +32,7 @@ function publicOpenAIError(error) {
 
 function completedResponse(response) {
   let extraction;
-  try { extraction = enforceAnalysisChecks(JSON.parse(response.output_text)); }
+  try { extraction = enforceAnalysisChecks(linkExplicitDimensionTargets(JSON.parse(response.output_text))); }
   catch { return json({ error: 'AI analysis completed but returned invalid structured data.' }, 502); }
 
   return json({

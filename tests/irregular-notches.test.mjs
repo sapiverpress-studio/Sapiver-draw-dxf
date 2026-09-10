@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { compileSourceGeometry } from '../core/geometry.js';
 import { buildDxf } from '../core/dxf.js';
+import { repairGeometryLinks, reviewStats } from '../core/review-model.js';
 
 const dim = (id, valueMm, reference='size', fromEdge='unknown') => ({ id, label:id, valueMm, reference, fromEdge, confirmed:true });
 
@@ -30,6 +31,30 @@ const irregular={
 const compiled=compileSourceGeometry(irregular);
 assert.equal(compiled.ok,true,compiled.errors.join('\n'));
 assert.equal(compiled.parts[0].profile.type,'quadrilateral');
+
+const photographedStep = {
+  dimensions:[
+    {id:'ow',label:'Overall panel width along bottom edge',role:'overall',valueMm:1500,reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'oh',label:'Overall panel height at left edge',role:'overall',valueMm:500,reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'nw',label:'Top-right corner-notch horizontal width',role:'size',valueMm:500,reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'nd',label:'Top-right corner-notch vertical depth',role:'size',valueMm:250,reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'sw',label:'Socket width',role:'size',valueMm:130,reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'sh',label:'Socket height',role:'size',valueMm:75,reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'sx',label:'Socket X',role:'position',valueMm:100,reference:'edge',fromEdge:'left',confirmed:true},
+    {id:'sy',label:'Socket Y',role:'position',valueMm:100,reference:'edge',fromEdge:'bottom',confirmed:true},
+  ],
+  analysis:{parts:[{id:'step',label:'Stepped panel',profile:{type:'irregular',width_mm:null,height_mm:null,width_dimension_id:null,height_dimension_id:null},features:[
+    {id:'Top-right corner cut-out',type:'corner_notch',quantity:1,corner:'top-right',width_mm:500,depth_mm:250,width_dimension_id:null,depth_dimension_id:null},
+    {id:'Socket cut-out 1',type:'rectangular_cutout',quantity:1,width_mm:130,height_mm:75,x_mm:100,y_mm:100,x_reference:'edge',x_from_edge:'left',y_reference:'edge',y_from_edge:'bottom',width_dimension_id:null,height_dimension_id:null,x_dimension_id:null,y_dimension_id:null},
+  ]}]},
+};
+repairGeometryLinks(photographedStep);
+assert.equal(photographedStep.analysis.parts[0].profile.type, 'rectangle', 'a figured stepped envelope must repair to a base rectangle');
+assert.equal(reviewStats(photographedStep).total, 8, 'stepped panel must retain perimeter, corner cut-out and socket logic');
+const photographedGeometry = compileSourceGeometry(photographedStep);
+assert.equal(photographedGeometry.ok, true, photographedGeometry.errors.join('\n'));
+assert.equal(photographedGeometry.parts[0].entities.length, 2, 'DXF geometry must contain one notched outline and one socket cut-out');
+assert.ok(photographedGeometry.parts[0].entities[0].points.some((point) => point.x === 1000 && point.y === 250), 'top-right step must be present in the outline');
 assert.ok(Math.abs(compiled.parts[0].bounds.width-500)<0.001);
 assert.ok(Math.abs(compiled.parts[0].bounds.height-300)<0.001);
 

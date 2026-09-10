@@ -13,6 +13,7 @@ const source = {
     dim('cut-x', 100, 'edge', 'left'), dim('cut-y', 75, 'centre', 'bottom'),
     dim('hole-d', 20), dim('hole-x', 300, 'centre', 'left'), dim('hole-y', 200, 'centre', 'bottom'),
     dim('slot-w', 80), dim('slot-h', 20), dim('slot-x', 120, 'edge', 'right'), dim('slot-y', 40, 'edge', 'top'),
+    dim('chain-w', 60), dim('chain-h', 40), dim('chain-x', 40, 'edge', 'left'), dim('chain-y', 80, 'edge', 'bottom'),
   ],
   analysis: {
     parts: [{
@@ -22,6 +23,7 @@ const source = {
         { id: 'cutout', type: 'rectangular_cutout', quantity: 1, width_dimension_id: 'cut-w', height_dimension_id: 'cut-h', diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: 'cut-x', y_dimension_id: 'cut-y' },
         { id: 'hole', type: 'circular_hole', quantity: 1, width_dimension_id: null, height_dimension_id: null, diameter_dimension_id: 'hole-d', radius_dimension_id: null, x_dimension_id: 'hole-x', y_dimension_id: 'hole-y' },
         { id: 'slot', type: 'slot', quantity: 1, width_dimension_id: 'slot-w', height_dimension_id: 'slot-h', diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: 'slot-x', y_dimension_id: 'slot-y' },
+        { id: 'chained', type: 'rectangular_cutout', quantity: 1, x_relative_to_feature_id: 'cutout', width_dimension_id: 'chain-w', height_dimension_id: 'chain-h', diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: 'chain-x', y_dimension_id: 'chain-y' },
       ],
     }],
   },
@@ -30,7 +32,7 @@ const source = {
 const geometry = compileSourceGeometry(source);
 assert.equal(geometry.ok, true, geometry.errors.join('\n'));
 assert.equal(geometry.parts.length, 1);
-assert.equal(geometry.parts[0].entities.length, 4);
+assert.equal(geometry.parts[0].entities.length, 5);
 
 const cutout = geometry.parts[0].entities[1];
 assert.equal(cutout.points[0].x, 100, 'edge reference from left must locate the near cutout edge');
@@ -41,6 +43,9 @@ const xs = slot.points.map((p) => p.x);
 const ys = slot.points.map((p) => p.y);
 assert.ok(Math.abs(Math.max(...xs) - 1080) < 0.001, 'right-edge reference must locate slot near edge at 120 mm from right');
 assert.ok(Math.abs(Math.max(...ys) - 560) < 0.001, 'top-edge reference must locate slot near edge at 40 mm from top');
+
+const chained = geometry.parts[0].entities[4];
+assert.equal(chained.points[0].x, 240, 'chained gap must run from the previous cut-out right edge to the new cut-out left edge');
 
 const dxf = buildDxf(geometry.parts[0].entities);
 assert.match(dxf, /\r\nCIRCLE\r\n/, 'circular hole must use a DXF CIRCLE entity');

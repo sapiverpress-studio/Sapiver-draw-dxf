@@ -2,7 +2,7 @@ name: Quick DXF demo v5 checks
 
 on:
   push:
-    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip, feature/passcode-manual-drawing]
+    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip, feature/passcode-manual-drawing, feature/chained-cutout-position]
   workflow_dispatch:
 
 permissions:
@@ -160,7 +160,7 @@ jobs:
           await page.type(`${first} [data-field="height"]`, '75');
           await page.click('#addManualCutoutBtn');
           const second = '#manualCutouts .manual-cutout:nth-child(2)';
-          await page.select(`${second} [data-field="from"]`, 'right');
+          await page.select(`${second} [data-field="from"]`, 'previous');
           await page.type(`${second} [data-field="x"]`, '150');
           await page.type(`${second} [data-field="y"]`, '120');
           await page.type(`${second} [data-field="width"]`, '100');
@@ -171,9 +171,10 @@ jobs:
             progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
             geometryState: document.querySelector('#geometryState')?.textContent?.trim(),
             dimensions: [...document.querySelectorAll('.dimension-title-row strong')].map((x) => x.textContent),
+            drawing: document.querySelector('#reviewDrawing')?.innerHTML || '',
           }));
           console.log('MANUAL', JSON.stringify(manual));
-          if (manual.progress !== '10 / 10 confirmed' || !manual.geometryState.includes('Deterministic geometry ready') || !manual.dimensions.some((x) => x.includes('Socket cut-out 2'))) process.exit(18);
+          if (manual.progress !== '10 / 10 confirmed' || !manual.geometryState.includes('Deterministic geometry ready') || !manual.dimensions.some((x) => x.includes('gap from previous cut-out')) || !manual.drawing.includes('150 mm gap from previous cut-out')) process.exit(18);
 
           await browser.close();
           if (errors.length) process.exit(17);

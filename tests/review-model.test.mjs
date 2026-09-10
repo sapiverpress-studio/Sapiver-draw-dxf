@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { compileSourceGeometry } from '../core/geometry.js';
-import { dimensionForSlot, geometrySlots, repairGeometryLinks, reviewDrawingSvg, reviewStats } from '../core/review-model.js';
+import { dimensionForSlot, geometrySlots, isPerimeterSlot, repairGeometryLinks, reviewDrawingSvg, reviewStats } from '../core/review-model.js';
 
 const source = {
   analysis: {
@@ -64,6 +64,10 @@ assert.equal(geometry.parts.length, 1);
 
 source.dimensions.push({ id:'manual-blank', label:'Correction / added dimension', role:'unknown', valueMm:null, reference:'unknown', fromEdge:'unknown', confirmed:false, confidence:'manual' });
 assert.equal(reviewStats(source).total, 10, 'unlinked manual reads must not expand required production confirmation');
+
+assert.equal(isPerimeterSlot({ ownerType: 'profile' }), true);
+assert.equal(isPerimeterSlot({ ownerType: 'segment' }), true, 'measured path segments must remain visible in the perimeter stage');
+assert.equal(isPerimeterSlot({ ownerType: 'feature' }), false);
 
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

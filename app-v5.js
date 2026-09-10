@@ -4,6 +4,7 @@ import { buildDxf } from './core/dxf.js';
 import { saveZip, zipFromRefs } from './core/zip.js';
 import {
   geometrySlots,
+  isPerimeterSlot,
   slotByKey,
   slotDimensionId,
   setSlotDimensionId,
@@ -13,7 +14,7 @@ import {
   reviewStats,
   unlinkedDimensions,
   unlinkDimension,
-  reviewDrawingDataUrl,
+  reviewDrawingSvg,
 } from './core/review-model.js';
 
 const $ = (s) => document.querySelector(s);
@@ -924,15 +925,30 @@ function makeSlotCard(source, slot) {
   return card;
 }
 
+let geometryPreviewObjectUrl = '';
+
+function clearGeometryPreview() {
+  if (geometryPreviewObjectUrl) URL.revokeObjectURL(geometryPreviewObjectUrl);
+  geometryPreviewObjectUrl = '';
+  els.geometryPreview.removeAttribute('src');
+  els.geometryPreview.hidden = true;
+  els.geometryPlaceholder.hidden = false;
+}
+
 function renderDigitalDrawing(source) {
   if (!els.geometryPreview || !els.geometryPlaceholder || !els.geometryState) return;
   if (!source?.analysis) {
-    els.geometryPreview.hidden = true; els.geometryPlaceholder.hidden = false; els.geometryState.textContent = 'Clean geometry will appear as dimensions are confirmed.'; els.geometryState.className = 'ai-state geometry-state'; return;
+    clearGeometryPreview(); els.geometryState.textContent = 'Clean geometry will appear as dimensions are confirmed.'; els.geometryState.className = 'ai-state geometry-state'; return;
   }
   repairGeometryLinks(source);
-  const url = reviewDrawingDataUrl(source);
-  if (url) { els.geometryPreview.src = url; els.geometryPreview.hidden = false; els.geometryPlaceholder.hidden = true; }
-  else { els.geometryPreview.hidden = true; els.geometryPlaceholder.hidden = false; }
+  const svg = reviewDrawingSvg(source);
+  clearGeometryPreview();
+  if (svg) {
+    geometryPreviewObjectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    els.geometryPreview.src = geometryPreviewObjectUrl;
+    els.geometryPreview.hidden = false;
+    els.geometryPlaceholder.hidden = true;
+  }
   const stats = reviewStats(source);
   const geometry = stats.total && stats.confirmed === stats.total ? productionGeometry(source) : { ok: false, errors: [] };
   if (geometry.ok) {
@@ -1016,7 +1032,7 @@ function renderDimensions() {
   }
   for (const [section, slots] of grouped) {
     const group = document.createElement('section'); group.className = 'feature-group';
-    group.dataset.reviewGroup = slots.every((slot) => slot.ownerType === 'profile') ? 'perimeter' : 'features';
+    group.dataset.reviewGroup = slots.every(isPerimeterSlot) ? 'perimeter' : 'features';
     const heading = document.createElement('div'); heading.className = 'feature-group-head'; heading.innerHTML = `<strong>${escapeHtml(section)}</strong><span>${slots.filter((slot) => dimensionReadyForSlot(slot, dimensionForSlot(source, slot))).length}/${slots.length}</span>`; group.appendChild(heading);
     for (const slot of slots) group.appendChild(makeSlotCard(source, slot));
     els.dimensionList.appendChild(group);

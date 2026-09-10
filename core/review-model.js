@@ -89,6 +89,10 @@ export function geometrySlots(source) {
   return slots;
 }
 
+export function isPerimeterSlot(slot) {
+  return ['profile', 'segment'].includes(slot?.ownerType);
+}
+
 export function slotOwner(source, slot) {
   if (!slot) return null;
   const part = source?.analysis?.parts?.[slot.partIndex];

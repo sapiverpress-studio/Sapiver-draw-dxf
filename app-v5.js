@@ -24,7 +24,7 @@ const els = {
   jobRef: $('#jobRef'), customerName: $('#customerName'), customerEmail: $('#customerEmail'), staffName: $('#staffName'), jobDate: $('#jobDate'),
   jobSearch: $('#jobSearch'), refreshJobsBtn: $('#refreshJobsBtn'), jobResults: $('#jobResults'),
   cameraInput: $('#cameraInput'), fileInput: $('#fileInput'), sourceStrip: $('#sourceStrip'), sourceEmpty: $('#sourceEmpty'), sourceCount: $('#sourceCount'),
-  manualDrawingBtn: $('#manualDrawingBtn'), manualDrawingDialog: $('#manualDrawingDialog'), manualDrawingForm: $('#manualDrawingForm'), manualWidth: $('#manualWidth'), manualHeight: $('#manualHeight'), manualCutouts: $('#manualCutouts'), addManualCutoutBtn: $('#addManualCutoutBtn'), manualDrawingError: $('#manualDrawingError'),
+  manualDrawingBtn: $('#manualDrawingBtn'), manualDrawingDialog: $('#manualDrawingDialog'), manualDrawingForm: $('#manualDrawingForm'), manualProfileType: $('#manualProfileType'), manualRectangleFields: $('#manualRectangleFields'), manualQuadrilateralFields: $('#manualQuadrilateralFields'), manualWidth: $('#manualWidth'), manualHeight: $('#manualHeight'), manualTop: $('#manualTop'), manualBottom: $('#manualBottom'), manualLeft: $('#manualLeft'), manualRight: $('#manualRight'), manualRightAngle1: $('#manualRightAngle1'), manualRightAngle2: $('#manualRightAngle2'), manualCutouts: $('#manualCutouts'), addManualCutoutBtn: $('#addManualCutoutBtn'), manualCornerCutouts: $('#manualCornerCutouts'), addCornerCutoutBtn: $('#addCornerCutoutBtn'), manualEdgeNotches: $('#manualEdgeNotches'), addEdgeNotchBtn: $('#addEdgeNotchBtn'), manualDrawingError: $('#manualDrawingError'),
   activeSourceTitle: $('#activeSourceTitle'), activeSourceMeta: $('#activeSourceMeta'), drawingPreview: $('#drawingPreview'), drawingPlaceholder: $('#drawingPlaceholder'),
   geometryPreview: $('#geometryPreview'), geometryPlaceholder: $('#geometryPlaceholder'), geometryState: $('#geometryState'),
   aiState: $('#aiState'), analyseBtn: $('#analyseBtn'), dimensionList: $('#dimensionList'), dimensionEmpty: $('#dimensionEmpty'), reviewProgress: $('#reviewProgress'), addCorrectionBtn: $('#addCorrectionBtn'),
@@ -521,8 +521,38 @@ function refreshManualCutoutReferences() {
 
 function openManualDrawing() {
   if (isFrozen()) return;
-  els.manualDrawingForm.reset(); els.manualCutouts.innerHTML = ''; els.manualDrawingError.textContent = '';
+  els.manualDrawingForm.reset(); els.manualCutouts.innerHTML = ''; els.manualCornerCutouts.innerHTML = ''; els.manualEdgeNotches.innerHTML = ''; els.manualDrawingError.textContent = '';
+  syncManualProfileType();
   addManualCutoutRow(); els.manualDrawingDialog.showModal();
+}
+
+function syncManualProfileType() {
+  const irregular = els.manualProfileType.value === 'quadrilateral';
+  els.manualRectangleFields.hidden = irregular;
+  els.manualQuadrilateralFields.hidden = !irregular;
+  els.manualWidth.required = !irregular; els.manualHeight.required = !irregular;
+  [els.manualTop, els.manualBottom, els.manualLeft, els.manualRight].forEach((input) => { input.required = irregular; });
+}
+
+function addCornerCutoutRow() {
+  const row = document.createElement('fieldset'); row.className = 'manual-cutout';
+  row.innerHTML = `<legend>Corner cut-out</legend><div class="manual-cutout-grid">
+    <label>Corner<select data-field="corner"><option value="bottom-left">Bottom left</option><option value="bottom-right">Bottom right</option><option value="top-right">Top right</option><option value="top-left">Top left</option></select></label>
+    <label>Width along top / bottom (mm)<input data-field="width" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Depth along side (mm)<input data-field="depth" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <button class="button danger-quiet" type="button">Remove corner cut-out</button></div>`;
+  row.querySelector('button').addEventListener('click', () => row.remove()); els.manualCornerCutouts.appendChild(row);
+}
+
+function addEdgeNotchRow() {
+  const row = document.createElement('fieldset'); row.className = 'manual-cutout';
+  row.innerHTML = `<legend>Edge notch</legend><div class="manual-cutout-grid">
+    <label>Edge<select data-field="edge"><option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select></label>
+    <label>Position from left / bottom (mm)<input data-field="offset" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Width along edge (mm)<input data-field="width" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <label>Depth into panel (mm)<input data-field="depth" type="number" min="0.01" step="0.01" inputmode="decimal" required></label>
+    <button class="button danger-quiet" type="button">Remove edge notch</button></div>`;
+  row.querySelector('button').addEventListener('click', () => row.remove()); els.manualEdgeNotches.appendChild(row);
 }
 
 function manualDimension(label, valueMm, role, reference = 'size', fromEdge = 'unknown') {
@@ -531,12 +561,25 @@ function manualDimension(label, valueMm, role, reference = 'size', fromEdge = 'u
 
 async function createManualDrawing(event) {
   event.preventDefault();
+  const profileType = els.manualProfileType.value;
   const width = Number(els.manualWidth.value), height = Number(els.manualHeight.value);
-  if (!(width > 0 && height > 0)) { els.manualDrawingError.textContent = 'Enter a positive panel width and height.'; return; }
+  const top = Number(els.manualTop.value), bottom = Number(els.manualBottom.value), left = Number(els.manualLeft.value), right = Number(els.manualRight.value);
+  if (profileType === 'rectangle' && !(width > 0 && height > 0)) { els.manualDrawingError.textContent = 'Enter a positive panel width and height.'; return; }
+  if (profileType === 'quadrilateral' && ![top, bottom, left, right].every((value) => value > 0)) { els.manualDrawingError.textContent = 'Enter all four positive side lengths for the out-of-square panel.'; return; }
+  if (profileType === 'quadrilateral' && els.manualRightAngle2.value === els.manualRightAngle1.value) { els.manualDrawingError.textContent = 'The second 90° indication must be a different corner.'; return; }
   const dimensions = [];
-  const widthDim = manualDimension('Overall width (top / bottom)', width, 'overall');
-  const heightDim = manualDimension('Overall height (left / right)', height, 'overall');
-  dimensions.push(widthDim, heightDim);
+  let profile;
+  if (profileType === 'rectangle') {
+    const widthDim = manualDimension('Overall width (top / bottom)', width, 'overall');
+    const heightDim = manualDimension('Overall height (left / right)', height, 'overall');
+    dimensions.push(widthDim, heightDim);
+    profile = { type: 'rectangle', width_mm: width, height_mm: height, width_dimension_id: widthDim.id, height_dimension_id: heightDim.id, diameter_dimension_id: null, confidence: 'manual' };
+  } else {
+    const topDim = manualDimension('Top length', top, 'overall'), bottomDim = manualDimension('Bottom length', bottom, 'overall');
+    const leftDim = manualDimension('Left length', left, 'overall'), rightDim = manualDimension('Right length', right, 'overall');
+    dimensions.push(topDim, bottomDim, leftDim, rightDim);
+    profile = { type: 'quadrilateral', top_mm: top, bottom_mm: bottom, left_mm: left, right_mm: right, top_dimension_id: topDim.id, bottom_dimension_id: bottomDim.id, left_dimension_id: leftDim.id, right_dimension_id: rightDim.id, right_angle_corners: [els.manualRightAngle1.value, els.manualRightAngle2.value].filter((value) => value !== 'none'), confidence: 'manual' };
+  }
   const features = [];
   for (const [index, row] of [...els.manualCutouts.children].entries()) {
     const read = (name) => row.querySelector(`[data-field="${name}"]`)?.value;
@@ -552,10 +595,22 @@ async function createManualDrawing(event) {
     if (from === 'previous') xd.relativeToFeatureId = previousFeature.id;
     features.push({ id: `Socket cut-out ${index + 1}`, type: 'rectangular_cutout', quantity: 1, width_mm: cutWidth, height_mm: cutHeight, x_mm: x, x_reference: 'edge', x_from_edge: from === 'previous' ? 'left' : from, x_relative_to_feature_id: from === 'previous' ? previousFeature.id : null, y_mm: y, y_reference: 'edge', y_from_edge: 'bottom', width_dimension_id: wd.id, height_dimension_id: hd.id, diameter_dimension_id: null, radius_dimension_id: null, x_dimension_id: xd.id, y_dimension_id: yd.id, touching_edge: 'none', confidence: 'manual', source_note: 'Entered manually' });
   }
+  for (const [index, row] of [...els.manualCornerCutouts.children].entries()) {
+    const corner = row.querySelector('[data-field="corner"]').value, cutWidth = Number(row.querySelector('[data-field="width"]').value), depth = Number(row.querySelector('[data-field="depth"]').value);
+    if (!(cutWidth > 0 && depth > 0)) { els.manualDrawingError.textContent = `Complete corner cut-out ${index + 1}.`; return; }
+    const wd = manualDimension(`Corner cut-out ${index + 1} width`, cutWidth, 'size'), dd = manualDimension(`Corner cut-out ${index + 1} depth`, depth, 'size'); dimensions.push(wd, dd);
+    features.push({ id:`Corner cut-out ${index + 1}`, type:'corner_notch', quantity:1, corner, width_mm:cutWidth, depth_mm:depth, width_dimension_id:wd.id, depth_dimension_id:dd.id, confidence:'manual', source_note:'Entered manually' });
+  }
+  for (const [index, row] of [...els.manualEdgeNotches.children].entries()) {
+    const edge = row.querySelector('[data-field="edge"]').value, offset = Number(row.querySelector('[data-field="offset"]').value), notchWidth = Number(row.querySelector('[data-field="width"]').value), depth = Number(row.querySelector('[data-field="depth"]').value);
+    if (!(offset > 0 && notchWidth > 0 && depth > 0)) { els.manualDrawingError.textContent = `Complete edge notch ${index + 1}.`; return; }
+    const od = manualDimension(`Edge notch ${index + 1} position`, offset, 'position', 'edge', ['top','bottom'].includes(edge) ? 'left' : 'bottom'), wd = manualDimension(`Edge notch ${index + 1} width`, notchWidth, 'size'), dd = manualDimension(`Edge notch ${index + 1} depth`, depth, 'size'); dimensions.push(od, wd, dd);
+    features.push({ id:`Edge notch ${index + 1}`, type:'edge_notch', quantity:1, touching_edge:edge, offset_mm:offset, width_mm:notchWidth, depth_mm:depth, offset_dimension_id:od.id, width_dimension_id:wd.id, depth_dimension_id:dd.id, confidence:'manual', source_note:'Entered manually' });
+  }
   const sourceId = id();
   const source = {
     id: sourceId, name: `Manual rectangular panel ${state.sources.length + 1}`, kind: 'manual', contentType: 'application/x-quick-dxf-manual', fileId: null, fileKey: null, sourceRevision: state.revision, previewUrl: null, pageCount: null,
-    analysisStatus: 'review', dimensions, analysis: { dimensions: [], parts: [{ id: `panel-${sourceId}`, label: 'Rectangular panel', profile: { type: 'rectangle', width_mm: width, height_mm: height, width_dimension_id: widthDim.id, height_dimension_id: heightDim.id, diameter_dimension_id: null, confidence: 'manual' }, features, dimension_ids: dimensions.map((d) => d.id) }] },
+    analysisStatus: 'review', dimensions, analysis: { dimensions: [], parts: [{ id: `panel-${sourceId}`, label: profileType === 'rectangle' ? 'Rectangular panel' : 'Out-of-square panel', profile, features, dimension_ids: dimensions.map((d) => d.id) }] },
     analysisResponseId: null, analysisStartedAt: null, analysisModel: 'manual', analysisUsage: null,
   };
   state.sources.push(source); state.activeSourceId = source.id; invalidateApproval();
@@ -1164,7 +1219,10 @@ els.newRevisionBtn.addEventListener('click', newRevision);
 els.cameraInput.addEventListener('change', async (e) => { await addFiles([...e.target.files]); e.target.value = ''; });
 els.fileInput.addEventListener('change', async (e) => { await addFiles([...e.target.files]); e.target.value = ''; });
 els.manualDrawingBtn.addEventListener('click', openManualDrawing);
+els.manualProfileType.addEventListener('change', syncManualProfileType);
 els.addManualCutoutBtn.addEventListener('click', () => addManualCutoutRow());
+els.addCornerCutoutBtn.addEventListener('click', addCornerCutoutRow);
+els.addEdgeNotchBtn.addEventListener('click', addEdgeNotchRow);
 els.manualDrawingForm.addEventListener('submit', createManualDrawing);
 document.querySelectorAll('[data-close-manual]').forEach((button) => button.addEventListener('click', () => els.manualDrawingDialog.close()));
 els.analyseBtn.addEventListener('click', () => analyseSource());

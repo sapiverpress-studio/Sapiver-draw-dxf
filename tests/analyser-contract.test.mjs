@@ -33,6 +33,7 @@ assert.ok(ANALYSIS_SCHEMA.required.includes('analysis_checks'));
 const profile = ANALYSIS_SCHEMA.properties.parts.items.properties.profile;
 assert.ok(profile.required.includes('side_heights_to_notch_shoulders'));
 assert.deepEqual(profile.properties.side_heights_to_notch_shoulders, { type:'boolean' });
+assert.ok(profile.required.includes('boundary_segments'));
 
 const unsafe = enforceAnalysisChecks({
   production_ready:true,
@@ -68,5 +69,9 @@ assert.equal(linkedPart.profile.bottom_dimension_id,'d1');
 assert.equal(linkedPart.profile.left_dimension_id,'d2');
 assert.equal(linkedPart.profile.right_dimension_id,'d3');
 assert.equal(linkedPart.features[0].width_dimension_id,'d4');
+
+const pathTarget={parts:[{id:'p1',profile:{type:'path',boundary_segments:[{id:'s1',kind:'horizontal',dimension_id:null,length_mm:null}]},features:[]}],dimensions:[{id:'edge',value:1800,target:'p1.profile.boundary.s1'}]};
+linkExplicitDimensionTargets(pathTarget);
+assert.equal(pathTarget.parts[0].profile.boundary_segments[0].dimension_id,'edge');
 
 console.log('geometry-first analyser contract tests passed.');

@@ -125,7 +125,7 @@ function checkInsideOuter(profile, entity, label, errors) {
     }
     return;
   }
-  if (profile.type === 'quadrilateral') {
+  if (['quadrilateral','path'].includes(profile.type)) {
     const samples=entity.type==='circle'
       ? Array.from({length:16},(_,i)=>point(entity.cx+entity.r*Math.cos(i*Math.PI/8),entity.cy+entity.r*Math.sin(i*Math.PI/8)))
       : entity.points;
@@ -270,9 +270,9 @@ function compileFeature(feature, profile, dimensionMap, compiledFeatures, partLa
   const yd = resolveDimension(dimensionMap, feature.y_dimension_id, `${prefix} Y position`, errors, { position: true });
   if (!xd || !yd) return null;
 
-  const profileBounds=profile.type==='quadrilateral'?{width:Math.max(...profile.points.map(p=>p.x))-Math.min(...profile.points.map(p=>p.x)),height:Math.max(...profile.points.map(p=>p.y))-Math.min(...profile.points.map(p=>p.y))}:null;
-  const totalWidth = profile.type === 'rectangle' ? profile.width : profile.type === 'quadrilateral' ? profileBounds.width : profile.diameter;
-  const totalHeight = profile.type === 'rectangle' ? profile.height : profile.type === 'quadrilateral' ? profileBounds.height : profile.diameter;
+  const profileBounds=['quadrilateral','path'].includes(profile.type)?{width:Math.max(...profile.points.map(p=>p.x))-Math.min(...profile.points.map(p=>p.x)),height:Math.max(...profile.points.map(p=>p.y))-Math.min(...profile.points.map(p=>p.y))}:null;
+  const totalWidth = profile.type === 'rectangle' ? profile.width : ['quadrilateral','path'].includes(profile.type) ? profileBounds.width : profile.diameter;
+  const totalHeight = profile.type === 'rectangle' ? profile.height : ['quadrilateral','path'].includes(profile.type) ? profileBounds.height : profile.diameter;
   let cx;
   if (feature.x_relative_to_feature_id) {
     const previous = compiledFeatures.get(feature.x_relative_to_feature_id);
@@ -350,6 +350,44 @@ function compilePart(part, dimensionMap, errors) {
     const points=shoulderBoundary || (derivedTop?solveTwoSquareBottomPanel(lengths,label,errors):solveQuadrilateral(lengths,rightAngles,label,errors)); if(!points)return null;
     profile={type:'quadrilateral',points,lengths,rightAngleCorners:rightAngles,derivedTop};
     outer={type:'polyline',points,closed:true,role:'outer',label};
+  } else if (profileSpec.type === 'path') {
+    const pathErrorCount=errors.length;
+    const segments=profileSpec.boundary_segments||[];
+    const connectIndexes=segments.map((segment,index)=>segment.kind==='connect'?index:-1).filter((index)=>index>=0);
+    if (segments.length<3 || connectIndexes.length!==1) {
+      errors.push(`${label}: a measured perimeter path requires at least three segments and exactly one calculated closing segment.`);
+      return null;
+    }
+    const vectors=[];
+    for (const segment of segments) {
+      if (segment.kind==='connect') { vectors.push(null); continue; }
+      const resolved=resolveDimension(dimensionMap,segment.dimension_id,`${label} / ${segment.label||segment.id||'perimeter segment'}`,errors);
+      if (!resolved) { vectors.push(null); continue; }
+      const length=Number(resolved.valueMm);
+      const directions={right:[length,0],left:[-length,0],up:[0,length],down:[0,-length]};
+      const vector=directions[segment.direction];
+      if (!vector || (segment.kind==='horizontal'&&!['left','right'].includes(segment.direction)) || (segment.kind==='vertical'&&!['up','down'].includes(segment.direction))) {
+        errors.push(`${label} / ${segment.label||segment.id}: invalid perimeter direction.`);
+        vectors.push(null);
+      } else vectors.push(vector);
+    }
+    if (errors.length>pathErrorCount) return null;
+    const known=vectors.filter(Boolean).reduce((sum,vector)=>[sum[0]+vector[0],sum[1]+vector[1]],[0,0]);
+    vectors[connectIndexes[0]]=[-known[0],-known[1]];
+    if (Math.hypot(...vectors[connectIndexes[0]])<EPS) {
+      errors.push(`${label}: calculated closing perimeter segment has zero length.`);
+      return null;
+    }
+    const raw=[point(0,0)];
+    let cursor=point(0,0);
+    for (let index=0; index<vectors.length; index+=1) {
+      cursor=point(cursor.x+vectors[index][0],cursor.y+vectors[index][1]);
+      if (index<vectors.length-1) raw.push(cursor);
+    }
+    const minX=Math.min(...raw.map((p)=>p.x)),minY=Math.min(...raw.map((p)=>p.y));
+    const points=raw.map((p)=>point(p.x-minX,p.y-minY));
+    profile={type:'path',points,segments};
+    outer={type:'polyline',points,closed:true,role:'outer',label};
   } else if (profileSpec.type === 'circle') {
     const dd = resolveDimension(dimensionMap, profileSpec.diameter_dimension_id, `${label} overall diameter`, errors);
     if (!dd) return null;
@@ -361,7 +399,7 @@ function compilePart(part, dimensionMap, errors) {
     return null;
   }
 
-  const boundaryFeatures=profileSpec.side_heights_to_notch_shoulders
+  const boundaryFeatures=profileSpec.type==='path' ? [] : profileSpec.side_heights_to_notch_shoulders
     ? (part.features||[]).filter((feature)=>feature.type==='edge_notch')
     : (part.features||[]).filter((feature)=>['corner_notch','edge_notch'].includes(feature.type));
   if(boundaryFeatures.length && outer.type==='polyline') outer.points=buildNotchedBoundary(outer.points,boundaryFeatures,dimensionMap,label,errors);

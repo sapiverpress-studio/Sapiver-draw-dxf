@@ -37,6 +37,7 @@ GENERAL RULES:
 - Use corner_notch for a rectangular cut removed from a named panel corner. Use edge_notch for a rectangular recess into a named edge, with its offset measured from the left for top/bottom edges or from the bottom for left/right edges.
 - A corner notch has two independently figured legs. Map the figure parallel to the adjacent horizontal direction to width and the figure parallel to the adjacent vertical direction to depth. Determine top-left/top-right/bottom-left/bottom-right from the traced perimeter, not from reading order.
 - Support multiple corner_notch and edge_notch features on the same panel. Do not merge opposite notches into one feature and do not discard the base panel dimensions.
+- Use profile type path when the outer boundary has more than four straight segments, combines a sloping edge with steps/notches, or cannot be represented safely by a rectangle or quadrilateral plus uniform corner removals. Trace boundary_segments clockwise from a convenient corner. Use horizontal with left/right and vertical with up/down for every figured straight segment. Use exactly one connect segment for an unfigured final straight/sloping span whose endpoint is fixed by closure. Put each boundary figure directly on its segment dimension_id. Boundary steps represented in the path must not also be duplicated as feature objects. Internal holes, slots and cut-outs remain features.
 - A stepped or L-shaped outline caused only by a rectangular corner removal is not an irregular profile. Model the uncut maximum envelope as a rectangle using explicitly figured overall width and height, then model the removed corner as corner_notch. For example, a 1500 overall bottom, 500 overall left height, 1000 remaining top, 500 notch width and 250 notch depth is a 1500 x 500 rectangle with a 500 x 250 top-right corner_notch. Do not infer missing closure dimensions unless the figured measurements explicitly support them.
 - Keep an internal socket opening as rectangular_cutout even when the outer profile also contains a corner_notch or edge_notch. Link all profile, notch and internal cut-out parameters to their exact dimension ids.
 - Preserve ambiguous handwritten values in raw_text and lower confidence rather than guessing.
@@ -111,6 +112,19 @@ const feature = {
   ],
 };
 
+const boundarySegment = {
+  type:'object', additionalProperties:false,
+  properties:{
+    id:{type:'string'},
+    label:{type:'string'},
+    kind:{type:'string',enum:['horizontal','vertical','connect']},
+    direction:{type:'string',enum:['left','right','up','down','connect']},
+    length_mm:{type:['number','null']},
+    dimension_id:nullableDimensionId,
+  },
+  required:['id','label','kind','direction','length_mm','dimension_id'],
+};
+
 const part = {
   type: 'object', additionalProperties: false,
   properties: {
@@ -119,7 +133,7 @@ const part = {
     profile: {
       type: 'object', additionalProperties: false,
       properties: {
-        type: { type: 'string', enum: ['rectangle', 'circle', 'quadrilateral', 'polygon', 'irregular', 'unknown'] },
+        type: { type: 'string', enum: ['rectangle', 'circle', 'quadrilateral', 'path', 'polygon', 'irregular', 'unknown'] },
         width_mm: { type: ['number', 'null'] },
         height_mm: { type: ['number', 'null'] },
         diameter_mm: { type: ['number', 'null'] },
@@ -131,11 +145,12 @@ const part = {
         top_dimension_id: nullableDimensionId, bottom_dimension_id: nullableDimensionId, left_dimension_id: nullableDimensionId, right_dimension_id: nullableDimensionId,
         right_angle_corners: { type:'array', items:{ type:'string', enum:['bottom-left','bottom-right','top-right','top-left'] } },
         side_heights_to_notch_shoulders: { type:'boolean' },
+        boundary_segments:{type:'array',items:boundarySegment},
       },
       required: [
         'type', 'width_mm', 'height_mm', 'diameter_mm',
         'width_dimension_id', 'height_dimension_id', 'diameter_dimension_id', 'confidence',
-        'top_mm','bottom_mm','left_mm','right_mm','top_dimension_id','bottom_dimension_id','left_dimension_id','right_dimension_id','right_angle_corners','side_heights_to_notch_shoulders',
+        'top_mm','bottom_mm','left_mm','right_mm','top_dimension_id','bottom_dimension_id','left_dimension_id','right_dimension_id','right_angle_corners','side_heights_to_notch_shoulders','boundary_segments',
       ],
     },
     features: { type: 'array', items: feature },
@@ -212,7 +227,18 @@ export function linkExplicitDimensionTargets(extraction) {
       if (!prefix) continue;
       const remainder=target.slice(prefix.length+1);
       if (/^profile\./i.test(remainder)) {
-        const field=profileTargetField(normaliseTargetToken(remainder.replace(/^profile\./i,'')));
+        const profileRemainder=remainder.replace(/^profile\./i,'');
+        const segmentMatch=profileRemainder.match(/^(?:boundary|segments?)\.([^.]*)/i);
+        if (segmentMatch && part.profile) {
+          const token=normaliseTargetToken(segmentMatch[1]);
+          const segment=(part.profile.boundary_segments||[]).find((candidate,index)=>[candidate?.id,`s${index+1}`,String(index+1)].map(normaliseTargetToken).includes(token));
+          if (segment) {
+            segment.dimension_id=dimension.id;
+            segment.length_mm=Number(dimension.value);
+          }
+          break;
+        }
+        const field=profileTargetField(normaliseTargetToken(profileRemainder));
         if (field && part.profile) {
           part.profile[`${field}_dimension_id`]=dimension.id;
           part.profile[`${field}_mm`]=Number(dimension.value);

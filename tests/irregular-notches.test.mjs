@@ -134,6 +134,34 @@ assert.deepEqual(doubleShoulderPoints,[
   {x:1825,y:645},{x:14,y:620},{x:14,y:600},{x:0,y:600},
 ]);
 assert.equal((buildDxf(doubleShoulderGeometry.parts[0].entities).match(/\r\nPOLYLINE\r\n/g)||[]).length,1,'double-shoulder panel must export as one continuous DXF perimeter');
+
+const generatedDemo={
+  dimensions:[dim('bottom-1800',1800),dim('right-650',650),dim('right-notch-150',150),dim('right-notch-100',100),dim('left-notch-80',80),dim('left-notch-120',120),dim('left-600',600),
+    dim('rect-w',140),dim('rect-h',80),dim('rect-x',250,'centre','left'),dim('rect-y',120,'centre','bottom'),
+    dim('hole-d',30),dim('hole-x',1000,'centre','left'),dim('hole-y',200,'centre','bottom'),
+    dim('slot-w',100),dim('slot-h',30),dim('slot-x',300,'centre','right'),dim('slot-y',250,'centre','bottom')],
+  analysis:{parts:[{id:'demo',label:'Mixed-step tapered demonstration',profile:{type:'path',boundary_segments:[
+    {id:'bottom',label:'Bottom width',kind:'horizontal',direction:'right',dimension_id:'bottom-1800'},
+    {id:'right-side',label:'Right outer side',kind:'vertical',direction:'up',dimension_id:'right-650'},
+    {id:'right-notch-width',label:'Right notch width',kind:'horizontal',direction:'left',dimension_id:'right-notch-150'},
+    {id:'right-notch-depth',label:'Right notch depth',kind:'vertical',direction:'up',dimension_id:'right-notch-100'},
+    {id:'sloping-top',label:'Calculated sloping top',kind:'connect',direction:'connect',dimension_id:null},
+    {id:'left-notch-depth',label:'Left notch depth',kind:'vertical',direction:'up',dimension_id:'left-notch-80'},
+    {id:'left-notch-width',label:'Left notch width',kind:'horizontal',direction:'left',dimension_id:'left-notch-120'},
+    {id:'left-side',label:'Left outer side',kind:'vertical',direction:'down',dimension_id:'left-600'},
+  ]},features:[
+    {id:'socket',type:'rectangular_cutout',quantity:1,width_dimension_id:'rect-w',height_dimension_id:'rect-h',x_dimension_id:'rect-x',y_dimension_id:'rect-y'},
+    {id:'hole',type:'circular_hole',quantity:1,diameter_dimension_id:'hole-d',x_dimension_id:'hole-x',y_dimension_id:'hole-y'},
+    {id:'slot',type:'slot',quantity:1,width_dimension_id:'slot-w',height_dimension_id:'slot-h',x_dimension_id:'slot-x',y_dimension_id:'slot-y'},
+  ]}]},
+};
+const generatedDemoGeometry=compileSourceGeometry(generatedDemo);
+assert.equal(generatedDemoGeometry.ok,true,generatedDemoGeometry.errors.join('\n'));
+assert.deepEqual(generatedDemoGeometry.parts[0].entities[0].points,[
+  {x:0,y:0},{x:1800,y:0},{x:1800,y:650},{x:1650,y:650},{x:1650,y:750},{x:120,y:520},{x:120,y:600},{x:0,y:600},
+]);
+assert.equal(generatedDemoGeometry.parts[0].entities.length,4,'mixed perimeter plus rectangle, hole and slot must compile');
+assert.equal((buildDxf(generatedDemoGeometry.parts[0].entities).match(/\r\nPOLYLINE\r\n/g)||[]).length,3,'DXF must contain outer path, rectangle and slot polylines');
 assert.ok(Math.abs(compiled.parts[0].bounds.width-500)<0.001);
 assert.ok(Math.abs(compiled.parts[0].bounds.height-300)<0.001);
 

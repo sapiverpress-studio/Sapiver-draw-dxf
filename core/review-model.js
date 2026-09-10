@@ -50,6 +50,12 @@ function pushProfileSlots(slots, part, partIndex) {
         : `${side[0].toUpperCase()}${side.slice(1)} length`;
       slots.push({ ...common, key:`p${partIndex}:profile:${side}`, parameter:side, field:`${side}_dimension_id`, valueField:`${side}_mm`, kind:'size', label:shoulderLabel });
     }
+  } else if (profile.type === 'path') {
+    for (let index=0; index<(profile.boundary_segments||[]).length; index+=1) {
+      const segment=profile.boundary_segments[index];
+      if (segment.kind === 'connect') continue;
+      slots.push({ ...common, key:`p${partIndex}:profile:segment:${index}`, parameter:'length', field:'dimension_id', valueField:'length_mm', kind:'size', ownerType:'segment', segmentIndex:index, label:segment.label || `Perimeter segment ${index+1}` });
+    }
   }
 }
 
@@ -87,7 +93,9 @@ export function slotOwner(source, slot) {
   if (!slot) return null;
   const part = source?.analysis?.parts?.[slot.partIndex];
   if (!part) return null;
-  return slot.ownerType === 'profile' ? part.profile : part.features?.[slot.featureIndex] || null;
+  if (slot.ownerType === 'profile') return part.profile;
+  if (slot.ownerType === 'segment') return part.profile?.boundary_segments?.[slot.segmentIndex] || null;
+  return part.features?.[slot.featureIndex] || null;
 }
 
 export function slotDimensionId(source, slot) {
@@ -119,7 +127,7 @@ function applySlotSemantics(source, slot, dimension) {
     dimension.reference = 'size';
     dimension.fromEdge = 'unknown';
     if (slot.parameter === 'diameter') dimension.role = 'diameter';
-    else if (slot.ownerType === 'profile') dimension.role = 'overall';
+    else if (['profile','segment'].includes(slot.ownerType)) dimension.role = 'overall';
     else dimension.role = 'size';
     return;
   }
@@ -221,7 +229,7 @@ function semanticScore(slot, dimension) {
     x:/\b(x|horizontal|left|right)\b/, y:/\b(y|vertical|bottom|top|up)\b/,
   };
   if (words[slot.parameter]?.test(label)) score += 4;
-  if (slot.ownerType === 'profile' && /\b(overall|panel|side|edge)\b/.test(label)) score += 2;
+  if (['profile','segment'].includes(slot.ownerType) && /\b(overall|panel|side|edge|perimeter|shoulder|notch)\b/.test(label)) score += 2;
   if (slot.ownerType === 'feature') {
     const featureWord = slot.featureType === 'rectangular_cutout' ? /\b(socket|cut[ -]?out|opening)\b/
       : slot.featureType === 'corner_notch' ? /\b(corner|notch|cut[ -]?out)\b/

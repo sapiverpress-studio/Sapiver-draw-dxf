@@ -2,7 +2,7 @@ name: Quick DXF demo v5 checks
 
 on:
   push:
-    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip, feature/passcode-manual-drawing, feature/chained-cutout-position]
+    branches: [demo-v5, fix/android-drawing-share-labels, fix/android-dxf-zip, feature/passcode-manual-drawing, feature/chained-cutout-position, feature/irregular-notches-local]
   workflow_dispatch:
 
 permissions:
@@ -176,6 +176,38 @@ jobs:
           }));
           console.log('MANUAL', JSON.stringify(manual));
           if (manual.progress !== '10 / 10 confirmed' || !manual.geometryState.includes('Deterministic geometry ready') || !manual.hasReviewOption || !manual.drawing.includes('150 mm gap from previous cut-out')) process.exit(18);
+
+          await page.click('#manualDrawingBtn');
+          await page.select('#manualProfileType', 'quadrilateral');
+          await page.type('#manualTop', '480');
+          await page.type('#manualBottom', '500');
+          await page.type('#manualLeft', '300');
+          await page.type('#manualRight', '300.6659');
+          await page.select('#manualRightAngle1', 'bottom-left');
+          await page.select('#manualRightAngle2', 'top-left');
+          await page.click('#manualCutouts .manual-cutout [data-remove-cutout]');
+          await page.click('#addCornerCutoutBtn');
+          const corner = '#manualCornerCutouts .manual-cutout:nth-child(1)';
+          await page.select(`${corner} [data-field="corner"]`, 'bottom-left');
+          await page.type(`${corner} [data-field="width"]`, '50');
+          await page.type(`${corner} [data-field="depth"]`, '40');
+          await page.click('#addEdgeNotchBtn');
+          const notch = '#manualEdgeNotches .manual-cutout:nth-child(1)';
+          await page.select(`${notch} [data-field="edge"]`, 'top');
+          await page.type(`${notch} [data-field="offset"]`, '100');
+          await page.type(`${notch} [data-field="width"]`, '50');
+          await page.type(`${notch} [data-field="depth"]`, '20');
+          await page.click('#manualDrawingForm button[type="submit"]');
+          await new Promise((r) => setTimeout(r, 300));
+          const irregular = await page.evaluate(() => ({
+            progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
+            geometryState: document.querySelector('#geometryState')?.textContent?.trim(),
+            drawing: decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(',')),
+            logo: document.querySelector('.company-logo')?.getAttribute('src'),
+            title: document.title,
+          }));
+          console.log('IRREGULAR', JSON.stringify({progress:irregular.progress,geometryState:irregular.geometryState,logo:irregular.logo,title:irregular.title}));
+          if (irregular.progress !== '9 / 9 confirmed' || !irregular.geometryState.includes('Deterministic geometry ready') || !irregular.drawing.includes('<polyline') || irregular.logo !== './assets/halifaxglass-logo.svg' || irregular.title !== 'Drawing Desk | Halifax Glass') process.exit(19);
 
           await browser.close();
           if (errors.length) process.exit(17);

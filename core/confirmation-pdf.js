@@ -18,6 +18,33 @@ function safe(value, fallback = '—') {
   return text || fallback;
 }
 
+export function confirmationArcPoints(entity, minimumSegments = 32) {
+  if (Array.isArray(entity?.previewPoints) && entity.previewPoints.length > 1) return entity.previewPoints;
+  const cx = Number(entity?.cx), cy = Number(entity?.cy), radius = Number(entity?.r);
+  const start = Number.isFinite(Number(entity?.travelStartDeg)) ? Number(entity.travelStartDeg) : Number(entity?.startDeg);
+  let sweep;
+  if (Number.isFinite(Number(entity?.travelSweepDeg))) sweep = Number(entity.travelSweepDeg);
+  else {
+    const end = Number(entity?.endDeg);
+    sweep = ((end - start) % 360 + 360) % 360;
+    if (sweep === 0) sweep = 360;
+  }
+  if (![cx, cy, radius, start, sweep].every(Number.isFinite) || !(radius > 0)) return [];
+  const count = Math.max(minimumSegments, Math.ceil(Math.abs(sweep) / 7.5));
+  return Array.from({ length: count + 1 }, (_, index) => {
+    const angle = (start + sweep * index / count) * Math.PI / 180;
+    return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
+  });
+}
+
+export function confirmationPartSizeText(part) {
+  if (part.profile?.type === 'rectangle') return `${part.profile.width} x ${part.profile.height} mm`;
+  if (part.profile?.type === 'quadrilateral') return `T ${part.profile.lengths.top} / B ${part.profile.lengths.bottom} / L ${part.profile.lengths.left} / R ${part.profile.lengths.right} mm`;
+  if (part.profile?.type === 'path') return `Measured curved perimeter - ${part.profile.segments?.length || 0} segments`;
+  if (part.profile?.type === 'circle') return `Diameter ${part.profile.diameter ?? '—'} mm`;
+  return 'Measured profile';
+}
+
 function drawLines(page, lines, x, y, font, size, lineHeight, options = {}) {
   for (const line of lines) {
     page.drawText(line, { x, y, font, size, ...options });
@@ -40,7 +67,7 @@ async function embedPreview(pdfDoc, source) {
   }
 }
 
-function drawCompiledGeometry(page, geometry, x, y, width, height, font, fontBold, rgb) {
+export function drawCompiledGeometry(page, geometry, x, y, width, height, font, fontBold, rgb) {
   if (!geometry?.ok || !Array.isArray(geometry.parts) || !geometry.parts.length) return false;
   page.drawRectangle({ x, y, width, height, borderWidth: 0.6, borderColor: rgb(0.7, 0.7, 0.7) });
   const cols = geometry.parts.length > 1 ? 2 : 1;
@@ -67,6 +94,12 @@ function drawCompiledGeometry(page, geometry, x, y, width, height, font, fontBol
       const thickness = entity.role === 'outer' ? 1.2 : 0.85;
       if (entity.type === 'circle') {
         page.drawCircle({ x: ox + entity.cx * scale, y: oy + entity.cy * scale, size: entity.r * scale, borderWidth: thickness, borderColor: rgb(0.08, 0.08, 0.08) });
+      } else if (entity.type === 'arc') {
+        const pts = confirmationArcPoints(entity);
+        for (let i = 0; i < pts.length - 1; i += 1) {
+          const a = pts[i], b = pts[i + 1];
+          page.drawLine({ start: { x: ox + a.x * scale, y: oy + a.y * scale }, end: { x: ox + b.x * scale, y: oy + b.y * scale }, thickness, color: rgb(0.08, 0.08, 0.08) });
+        }
       } else if (entity.type === 'polyline' && entity.points?.length) {
         const pts = entity.points;
         for (let i = 0; i < pts.length; i += 1) {
@@ -77,11 +110,7 @@ function drawCompiledGeometry(page, geometry, x, y, width, height, font, fontBol
         }
       }
     }
-    const sizeText = part.profile?.type === 'rectangle'
-      ? `${part.profile.width} x ${part.profile.height} mm`
-      : part.profile?.type === 'quadrilateral'
-        ? `T ${part.profile.lengths.top} / B ${part.profile.lengths.bottom} / L ${part.profile.lengths.left} / R ${part.profile.lengths.right} mm`
-        : `Diameter ${part.profile?.diameter ?? '—'} mm`;
+    const sizeText = confirmationPartSizeText(part);
     page.drawText(sizeText, { x: cellX + pad, y: cellY + 6, font, size: 7, color: rgb(0.3, 0.3, 0.3) });
   });
   return true;

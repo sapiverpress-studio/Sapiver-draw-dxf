@@ -509,7 +509,7 @@ export function reviewDrawingSvg(source) {
   const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
   if (!parts.length) return '';
   const slots = geometrySlots(source);
-  const needsCompiledOutline = parts.some((part) => part?.profile?.type === 'quadrilateral' || (part.features || []).some((feature) => ['corner_notch','edge_notch'].includes(feature.type)));
+  const needsCompiledOutline = parts.some((part) => ['quadrilateral', 'path'].includes(part?.profile?.type) || (part.features || []).some((feature) => ['corner_notch','edge_notch'].includes(feature.type)));
   if (needsCompiledOutline && slots.length && slots.every((slot) => dimensionReadyForSlot(slot, dimensionForSlot(source, slot)))) {
     const geometry = compileSourceGeometry(source);
     if (geometry.ok) return geometryToSvg(geometry, { width:900, height:430, padding:42 });

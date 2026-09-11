@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { compileSourceGeometry, geometryToSvg } from '../core/geometry.js';
 import { buildDxf } from '../core/dxf.js';
-import { repairGeometryLinks, reviewStats } from '../core/review-model.js';
+import { repairGeometryLinks, reviewDrawingSvg, reviewStats } from '../core/review-model.js';
 
 const dim = (id, valueMm, reference='size', fromEdge='unknown') => ({ id, label:id, valueMm, reference, fromEdge, confirmed:true });
 
@@ -164,6 +164,11 @@ assert.equal(generatedDemoGeometry.parts[0].entities.length,4,'mixed perimeter p
 const generatedDemoSvg=geometryToSvg(generatedDemoGeometry,{width:900,height:430,padding:42});
 assert.match(generatedDemoSvg,/Measured perimeter · 8 segments/,'path preview must describe its measured perimeter');
 assert.doesNotMatch(generatedDemoSvg,/undefined|NaN/,'path preview must not emit invalid SVG values');
+const generatedReviewSvg=reviewDrawingSvg(generatedDemo);
+assert.match(generatedReviewSvg,/Measured perimeter · 8 segments/,'confirmed measured paths must use the compiled geometry preview');
+assert.doesNotMatch(generatedReviewSvg,/Confirm overall width and height/,'confirmed measured paths must not fall back to the rectangle placeholder');
+assert.equal((generatedReviewSvg.match(/<polygon /g)||[]).length,3,'review preview must show the outer path, rectangular cut-out and slot');
+assert.equal((generatedReviewSvg.match(/<circle /g)||[]).length,1,'review preview must show the circular hole');
 assert.equal((buildDxf(generatedDemoGeometry.parts[0].entities).match(/\r\nPOLYLINE\r\n/g)||[]).length,3,'DXF must contain outer path, rectangle and slot polylines');
 assert.ok(Math.abs(compiled.parts[0].bounds.width-500)<0.001);
 assert.ok(Math.abs(compiled.parts[0].bounds.height-300)<0.001);

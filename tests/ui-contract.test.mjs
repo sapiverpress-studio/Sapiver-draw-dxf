@@ -37,7 +37,7 @@ assert.match(app, /Clarification needed/, 'real AI ambiguities must be shown as 
 assert.match(html, /id="purgeJobBtn"/, 'protected permanent deletion control must be present');
 assert.match(html, /assets\/halifaxglass-logo\.svg/, 'Halifax Glass logo must be present in the tool header');
 assert.match(html, /halifax-glass\.css/, 'Halifax Glass visual theme must be loaded');
-assert.match(html, /Version 2026\.09\.11 · 05:15 UTC/, 'deployed interface must show its timestamped version');
+assert.match(html, /Version 2026\.09\.11 · 06:35 UTC/, 'deployed interface must show its timestamped version');
 assert.match(app, /permanent: 'true'/, 'permanent deletion must call the protected server operation');
 assert.match(css, /img\[hidden\]\{display:none!important\}/, 'hidden preview images must stay hidden even when image CSS sets display:block');
 

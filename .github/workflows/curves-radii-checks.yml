@@ -32,6 +32,7 @@ jobs:
           node tests/review-model.test.mjs
           node tests/irregular-notches.test.mjs
           node tests/internet-drawing-matrix.test.mjs
+          node tests/internet-curves-matrix.test.mjs
           node tests/analyser-contract.test.mjs
           node tests/access-auth.test.mjs
           node tests/job-delete.test.mjs

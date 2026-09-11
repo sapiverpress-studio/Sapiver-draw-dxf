@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { arcFromChord, buildCurvedPath, buildRoundedRectangle } from '../core/curves.js';
+import { arcFromChord, buildCurvedPath, buildRoundedRectangle, radiusFromChordRise } from '../core/curves.js';
 import { compileSourceGeometry, geometryToSvg } from '../core/geometry.js';
 import * as legacyGeometry from '../core/geometry-legacy.js';
 import { buildDxf } from '../core/dxf.js';
@@ -60,6 +60,7 @@ const shallow = arcFromChord({ x: 0, y: 0 }, { x: 1200, y: 0 }, 800, { bulgeSide
 const expectedRise = 800 - Math.sqrt(800 ** 2 - 600 ** 2);
 const shallowRise = Math.max(...shallow.previewPoints.map((p) => p.y));
 close(shallowRise, expectedRise, 0.2, 'shallow arch rise');
+close(radiusFromChordRise(1200, expectedRise), 800, 1e-5, 'radius solved from confirmed chord and rise');
 const minor = arcFromChord({ x: 0, y: 0 }, { x: 100, y: 0 }, 75, { bulgeSide: 'left', extent: 'minor' });
 const major = arcFromChord({ x: 0, y: 0 }, { x: 100, y: 0 }, 75, { bulgeSide: 'left', extent: 'major' });
 assert.ok(Math.abs(minor.travelSweepDeg) < 180, 'minor arc sweep must be below 180 degrees');
@@ -71,6 +72,17 @@ assert.throws(
   /longer than the diameter/i,
   'an impossible radius must block production geometry',
 );
+assert.throws(() => radiusFromChordRise(1200, 700, { extent: 'minor' }), /minor arc rise/i);
+
+// A closing arc can join shoulders at different heights because its endpoints
+// are fixed by the preceding confirmed straight segments.
+const diagonalClosingArc = buildCurvedPath([
+  { id: 'right', kind: 'vertical', direction: 'down', length: 600 },
+  { id: 'bottom', kind: 'horizontal', direction: 'left', length: 1200 },
+  { id: 'left', kind: 'vertical', direction: 'up', length: 800 },
+  { id: 'top', kind: 'connect_arc', direction: 'connect', radius: 1000, bulgeSide: 'left', extent: 'minor' },
+]);
+assert.equal(diagonalClosingArc.entities.filter((entity) => entity.type === 'arc').length, 1);
 
 // Independent external corner radii use exact quarter-circle ARC entities.
 const rounded = buildRoundedRectangle(1000, 500, {
@@ -141,6 +153,30 @@ assert.match(archDxf, /\r\nCIRCLE\r\n/);
 const archSvg = geometryToSvg(archGeometry);
 assert.match(archSvg, /polyline/);
 assert.doesNotMatch(archSvg, /NaN|undefined/);
+
+const riseArchSource = structuredClone(archSource);
+const riseArc = riseArchSource.analysis.parts[0].profile.boundary_segments.find((segment) => segment.kind === 'connect_arc');
+riseArc.radius_mm = null;
+riseArc.radius_dimension_id = null;
+riseArc.rise_mm = 600;
+riseArc.rise_dimension_id = 'rise';
+riseArchSource.analysis.parts[0].dimension_ids = riseArchSource.analysis.parts[0].dimension_ids.map((id) => id === 'radius' ? 'rise' : id);
+riseArchSource.dimensions = riseArchSource.dimensions.filter((item) => item.id !== 'radius');
+riseArchSource.dimensions.push(dim('rise', 600, 'size', 'unknown', 'rise'));
+const riseArchGeometry = compileSourceGeometry(riseArchSource);
+assert.equal(riseArchGeometry.ok, true, riseArchGeometry.errors.join('\n'));
+assert.equal(riseArchGeometry.parts[0].entities.filter((entity) => entity.type === 'arc').length, 1);
+close(riseArchGeometry.parts[0].entities.find((entity) => entity.type === 'arc').r, 600);
+assert.ok(geometrySlots(riseArchSource).some((slot) => slot.parameter === 'rise'));
+
+const inconsistentRiseSource = structuredClone(riseArchSource);
+const inconsistentArc = inconsistentRiseSource.analysis.parts[0].profile.boundary_segments.find((segment) => segment.kind === 'connect_arc');
+inconsistentArc.radius_mm = 800;
+inconsistentArc.radius_dimension_id = 'radius';
+inconsistentRiseSource.dimensions.push(dim('radius', 800, 'size', 'unknown', 'radius'));
+const inconsistentRiseGeometry = compileSourceGeometry(inconsistentRiseSource);
+assert.equal(inconsistentRiseGeometry.ok, false);
+assert.match(inconsistentRiseGeometry.errors.join('\n'), /radius and rise do not describe the same circular arc/i);
 
 // Review layer: radii and arc constraints are first-class perimeter confirmations.
 const archSlots = geometrySlots(structuredClone(archSource));
@@ -238,7 +274,7 @@ assert.match(ANALYSIS_PROMPT, /wavy, freehand, spline-like, organic/i);
 const profileSchema = ANALYSIS_SCHEMA.properties.parts.items.properties.profile;
 assert.ok(profileSchema.required.includes('corner_radii'));
 const segmentSchema = profileSchema.properties.boundary_segments.items;
-for (const field of ['chord_mm', 'chord_dimension_id', 'radius_mm', 'radius_dimension_id', 'bulge_side', 'arc_extent']) assert.ok(segmentSchema.required.includes(field), `boundary segment must require ${field}`);
+for (const field of ['chord_mm', 'chord_dimension_id', 'radius_mm', 'radius_dimension_id', 'rise_mm', 'rise_dimension_id', 'bulge_side', 'arc_extent']) assert.ok(segmentSchema.required.includes(field), `boundary segment must require ${field}`);
 assert.ok(segmentSchema.properties.kind.enum.includes('arc'));
 assert.ok(segmentSchema.properties.kind.enum.includes('connect_arc'));
 
@@ -247,7 +283,7 @@ const linkedExtraction = {
     id: 'p1',
     profile: {
       type: 'path',
-      boundary_segments: [{ id: 's1', kind: 'arc', chord_mm: null, chord_dimension_id: null, radius_mm: null, radius_dimension_id: null }],
+      boundary_segments: [{ id: 's1', kind: 'arc', chord_mm: null, chord_dimension_id: null, radius_mm: null, radius_dimension_id: null, rise_mm: null, rise_dimension_id: null }],
       corner_radii: [{ corner: 'top-left', radius_mm: null, radius_dimension_id: null }],
     },
     features: [],
@@ -255,12 +291,14 @@ const linkedExtraction = {
   dimensions: [
     { id: 'c', value: 1200, target: 'p1.profile.boundary.s1.chord' },
     { id: 'r', value: 800, target: 'p1.profile.boundary.s1.radius' },
+    { id: 'rise', value: 270.85, target: 'p1.profile.boundary.s1.sagitta' },
     { id: 'cr', value: 50, target: 'p1.profile.corner_radii.top-left.radius' },
   ],
 };
 linkExplicitDimensionTargets(linkedExtraction);
 assert.equal(linkedExtraction.parts[0].profile.boundary_segments[0].chord_dimension_id, 'c');
 assert.equal(linkedExtraction.parts[0].profile.boundary_segments[0].radius_dimension_id, 'r');
+assert.equal(linkedExtraction.parts[0].profile.boundary_segments[0].rise_dimension_id, 'rise');
 assert.equal(linkedExtraction.parts[0].profile.corner_radii[0].radius_dimension_id, 'cr');
 
 const template = enforceAnalysisChecks({

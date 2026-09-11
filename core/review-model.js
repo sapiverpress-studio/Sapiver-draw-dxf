@@ -25,10 +25,12 @@ function curveProfileSlots(part,partIndex){
       const segment=profile.boundary_segments[index],base={partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'segment',segmentIndex:index};
       if(segment.kind==='connect') continue;
       if(segment.kind==='connect_arc'){
-        slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
+        if(segment.radius_dimension_id||finitePositive(segment.radius_mm)||!segment.rise_dimension_id&&!finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
+        if(segment.rise_dimension_id||finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:rise`,parameter:'rise',field:'rise_dimension_id',valueField:'rise_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} rise`});
       } else if(segment.kind==='arc'){
         slots.push({...base,key:`p${partIndex}:profile:segment:${index}:chord`,parameter:'chord',field:'chord_dimension_id',valueField:'chord_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} chord`});
-        slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
+        if(segment.radius_dimension_id||finitePositive(segment.radius_mm)||!segment.rise_dimension_id&&!finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
+        if(segment.rise_dimension_id||finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:rise`,parameter:'rise',field:'rise_dimension_id',valueField:'rise_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} rise`});
       } else {
         slots.push({...base,key:`p${partIndex}:profile:segment:${index}`,parameter:'length',field:'dimension_id',valueField:'length_mm',kind:'size',label:segment.label||`Perimeter segment ${index+1}`});
       }

@@ -121,11 +121,15 @@ function compileCurvedPart(part,dimensionMap,errors){
         compiled.push({...segment,length:Number(d.valueMm)});
       } else if(segment.kind==='arc'){
         const chord=resolveDimension(dimensionMap,segment.chord_dimension_id,`${name} chord`,errors);
-        const radius=resolveDimension(dimensionMap,segment.radius_dimension_id,`${name} radius`,errors); if(!chord||!radius)return null;
-        compiled.push({...segment,chord:Number(chord.valueMm),radius:Number(radius.valueMm),bulgeSide:segment.bulge_side,extent:segment.arc_extent});
+        const radius=segment.radius_dimension_id?resolveDimension(dimensionMap,segment.radius_dimension_id,`${name} radius`,errors):null;
+        const rise=segment.rise_dimension_id?resolveDimension(dimensionMap,segment.rise_dimension_id,`${name} rise`,errors):null;
+        if(!chord||(!radius&&!rise)){if(!segment.radius_dimension_id&&!segment.rise_dimension_id)errors.push(`${name}: AI did not link a figured radius or rise to this arc.`);return null;}
+        compiled.push({...segment,chord:Number(chord.valueMm),radius:radius?Number(radius.valueMm):null,rise:rise?Number(rise.valueMm):null,bulgeSide:segment.bulge_side,extent:segment.arc_extent});
       } else if(segment.kind==='connect_arc'){
-        const radius=resolveDimension(dimensionMap,segment.radius_dimension_id,`${name} radius`,errors); if(!radius)return null;
-        compiled.push({...segment,radius:Number(radius.valueMm),bulgeSide:segment.bulge_side,extent:segment.arc_extent});
+        const radius=segment.radius_dimension_id?resolveDimension(dimensionMap,segment.radius_dimension_id,`${name} radius`,errors):null;
+        const rise=segment.rise_dimension_id?resolveDimension(dimensionMap,segment.rise_dimension_id,`${name} rise`,errors):null;
+        if(!radius&&!rise){if(!segment.radius_dimension_id&&!segment.rise_dimension_id)errors.push(`${name}: AI did not link a figured radius or rise to this closing arc.`);return null;}
+        compiled.push({...segment,radius:radius?Number(radius.valueMm):null,rise:rise?Number(rise.valueMm):null,bulgeSide:segment.bulge_side,extent:segment.arc_extent});
       } else if(segment.kind==='connect') compiled.push({...segment});
       else {errors.push(`${name}: unsupported perimeter segment kind ${segment.kind||'unknown'}.`);return null;}
     }

@@ -24,6 +24,24 @@ function sampleSweep(cx, cy, r, startDeg, sweepDeg, segments = 32) {
   return Array.from({ length: count + 1 }, (_, index) => arcPoint(cx, cy, r, startDeg + sweepDeg * index / count));
 }
 
+export function radiusFromChordRise(chord, rise, { extent = 'minor' } = {}) {
+  chord = Number(chord);
+  rise = Number(rise);
+  if (!(chord > EPS)) throw new Error('Arc chord must be positive.');
+  if (!(rise > EPS)) throw new Error('Arc rise must be positive.');
+  const radius = chord * chord / (8 * rise) + rise / 2;
+  if (extent === 'minor' && rise > chord / 2 + EPS) {
+    throw new Error('A minor arc rise cannot exceed half its chord; confirm whether this is a major arc.');
+  }
+  if (extent === 'major' && rise < chord / 2 - EPS) {
+    throw new Error('A major arc rise must exceed half its chord; confirm whether this is a minor arc.');
+  }
+  if (extent === 'semicircle' && Math.abs(rise - chord / 2) > 1e-5) {
+    throw new Error('A semicircular arc rise must equal half its chord.');
+  }
+  return radius;
+}
+
 function chooseArcCandidate(start, end, radius, bulgeSide, extent) {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -148,7 +166,15 @@ export function buildCurvedPath(compiledSegments, { label = 'Measured perimeter'
     const end = point(cursor.x + vector[0], cursor.y + vector[1]);
     let entity;
     if (segment.kind === 'arc' || segment.kind === 'connect_arc') {
-      entity = arcFromChord(cursor, end, Number(segment.radius), {
+      const chord = Math.hypot(end.x - cursor.x, end.y - cursor.y);
+      const radius = Number(segment.radius) > 0
+        ? Number(segment.radius)
+        : radiusFromChordRise(chord, Number(segment.rise), { extent: segment.extent || 'minor' });
+      if (Number(segment.radius) > 0 && Number(segment.rise) > 0) {
+        const radiusFromRise = radiusFromChordRise(chord, Number(segment.rise), { extent: segment.extent || 'minor' });
+        if (Math.abs(radius - radiusFromRise) > 0.05) throw new Error(`${label} / ${segment.label || segment.id}: confirmed radius and rise do not describe the same circular arc.`);
+      }
+      entity = arcFromChord(cursor, end, radius, {
         bulgeSide: segment.bulgeSide || 'left',
         extent: segment.extent || 'minor',
         role: 'outer',

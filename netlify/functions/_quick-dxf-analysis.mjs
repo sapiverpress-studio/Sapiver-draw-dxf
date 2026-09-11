@@ -12,8 +12,8 @@ CURVED PERIMETER RULES — apply these in addition to the existing geometry-firs
 - Do not create named one-off shape categories such as arched_panel. Represent a curved outer boundary as straight and circular-arc primitives.
 - For a rectangular panel with rounded external corners, keep profile type rectangle and populate corner_radii. Link each radius to the exact figured radius dimension. A TYP or repeated radius dimension may legitimately support more than one corner.
 - For a general dimensioned curved outline, use profile type path. Trace boundary_segments in order around the perimeter.
-- Use kind arc when the arc chord/span is itself figured. direction describes chord travel (left/right/up/down), chord_dimension_id links the confirmed chord/span, radius_dimension_id links the confirmed radius, bulge_side is left or right relative to chord travel, and arc_extent is minor, major or semicircle.
-- Use kind connect_arc when the arc closes the perimeter and its two endpoints are already fixed by the preceding confirmed segments. A connect_arc still requires a figured radius. Use exactly one calculated closing segment in a path: connect or connect_arc.
+- Use kind arc when the arc chord/span is itself figured. direction describes chord travel (left/right/up/down), chord_dimension_id links the confirmed chord/span, bulge_side is left or right relative to chord travel, and arc_extent is minor, major or semicircle. Link either a figured radius or a figured rise/sagitta; link both when both are shown so deterministic code can check consistency.
+- Use kind connect_arc when the arc closes the perimeter and its two endpoints are already fixed by the preceding confirmed segments. This supports a sloping chord between unequal shoulder heights. A connect_arc requires either a figured radius or a figured rise/sagitta. Use exactly one calculated closing segment in a path: connect or connect_arc.
 - Compound circular curves are allowed as multiple arc segments, provided every radius and every required chord/span is explicitly figured or the endpoints are deterministically fixed by closure.
 - Never estimate a radius, chord, tangent point or curve from image scale. If the mathematical constraints are insufficient, keep production_ready false and ask a specific confirmation question.
 - Wavy, freehand, spline-like, organic or otherwise undefined freeform curves must NOT be approximated from the photograph. Set analysis_checks.unsupported_geometry_present true, set production_ready false, and add an uncertainty beginning exactly "Template required:" explaining that a full-size physical template is needed.
@@ -33,10 +33,12 @@ Object.assign(segment.properties, {
   chord_dimension_id: { type:['string','null'] },
   radius_mm: { type:['number','null'] },
   radius_dimension_id: { type:['string','null'] },
+  rise_mm: { type:['number','null'] },
+  rise_dimension_id: { type:['string','null'] },
   bulge_side: { type:'string', enum:['left','right','none'] },
   arc_extent: { type:'string', enum:['minor','major','semicircle','none'] },
 });
-for (const field of ['chord_mm','chord_dimension_id','radius_mm','radius_dimension_id','bulge_side','arc_extent']) {
+for (const field of ['chord_mm','chord_dimension_id','radius_mm','radius_dimension_id','rise_mm','rise_dimension_id','bulge_side','arc_extent']) {
   if (!segment.required.includes(field)) segment.required.push(field);
 }
 profile.properties.corner_radii = {
@@ -72,13 +74,14 @@ export function linkExplicitDimensionTargets(extraction){
     if(!target||!dimension?.id||!(Number(dimension.value)>0))continue;
     const found=partForTarget(parts,target.toLowerCase()); if(!found)continue;
     const {part,prefix}=found,remainder=target.slice(prefix.length+1);
-    const segmentMatch=remainder.match(/^profile\.(?:boundary|segments?)\.([^.]+)(?:\.(radius|chord|length))?$/i);
+    const segmentMatch=remainder.match(/^profile\.(?:boundary|segments?)\.([^.]+)(?:\.(radius|chord|rise|sagitta|length))?$/i);
     if(segmentMatch){
       const token=normalise(segmentMatch[1]),field=normalise(segmentMatch[2]||'length');
       const candidate=(part.profile?.boundary_segments||[]).find((item,index)=>[item?.id,`s${index+1}`,String(index+1)].map(normalise).includes(token));
       if(candidate){
         if(field==='radius'){candidate.radius_dimension_id=dimension.id;candidate.radius_mm=Number(dimension.value);}
         else if(field==='chord'){candidate.chord_dimension_id=dimension.id;candidate.chord_mm=Number(dimension.value);}
+        else if(field==='rise'||field==='sagitta'){candidate.rise_dimension_id=dimension.id;candidate.rise_mm=Number(dimension.value);}
         else {candidate.dimension_id=dimension.id;candidate.length_mm=Number(dimension.value);}
       }
       continue;

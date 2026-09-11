@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { compileSourceGeometry } from '../core/geometry.js';
+import { compileSourceGeometry, geometryToSvg } from '../core/geometry.js';
 import { buildDxf } from '../core/dxf.js';
 import { repairGeometryLinks, reviewStats } from '../core/review-model.js';
 
@@ -161,6 +161,9 @@ assert.deepEqual(generatedDemoGeometry.parts[0].entities[0].points,[
   {x:0,y:0},{x:1800,y:0},{x:1800,y:650},{x:1650,y:650},{x:1650,y:750},{x:120,y:520},{x:120,y:600},{x:0,y:600},
 ]);
 assert.equal(generatedDemoGeometry.parts[0].entities.length,4,'mixed perimeter plus rectangle, hole and slot must compile');
+const generatedDemoSvg=geometryToSvg(generatedDemoGeometry,{width:900,height:430,padding:42});
+assert.match(generatedDemoSvg,/Measured perimeter · 8 segments/,'path preview must describe its measured perimeter');
+assert.doesNotMatch(generatedDemoSvg,/undefined|NaN/,'path preview must not emit invalid SVG values');
 assert.equal((buildDxf(generatedDemoGeometry.parts[0].entities).match(/\r\nPOLYLINE\r\n/g)||[]).length,3,'DXF must contain outer path, rectangle and slot polylines');
 assert.ok(Math.abs(compiled.parts[0].bounds.width-500)<0.001);
 assert.ok(Math.abs(compiled.parts[0].bounds.height-300)<0.001);

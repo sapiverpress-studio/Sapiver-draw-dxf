@@ -1,0 +1,13 @@
+.geometry-svg-preview,
+.geometry-svg-preview svg {
+  width: 100%;
+  max-height: 560px;
+}
+
+.geometry-svg-preview svg {
+  display: block;
+}
+
+.geometry-svg-preview[hidden] {
+  display: none !important;
+}

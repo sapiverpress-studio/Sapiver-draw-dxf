@@ -925,12 +925,8 @@ function makeSlotCard(source, slot) {
   return card;
 }
 
-let geometryPreviewObjectUrl = '';
-
 function clearGeometryPreview() {
-  if (geometryPreviewObjectUrl) URL.revokeObjectURL(geometryPreviewObjectUrl);
-  geometryPreviewObjectUrl = '';
-  els.geometryPreview.removeAttribute('src');
+  els.geometryPreview.replaceChildren();
   els.geometryPreview.hidden = true;
   els.geometryPlaceholder.hidden = false;
 }
@@ -944,8 +940,10 @@ function renderDigitalDrawing(source) {
   const svg = reviewDrawingSvg(source);
   clearGeometryPreview();
   if (svg) {
-    geometryPreviewObjectUrl = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-    els.geometryPreview.src = geometryPreviewObjectUrl;
+    const template = document.createElement('template');
+    template.innerHTML = svg.trim();
+    const svgElement = template.content.firstElementChild;
+    if (svgElement?.localName === 'svg') els.geometryPreview.appendChild(svgElement);
     els.geometryPreview.hidden = false;
     els.geometryPlaceholder.hidden = true;
   }

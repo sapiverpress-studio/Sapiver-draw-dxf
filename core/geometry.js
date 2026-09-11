@@ -482,7 +482,10 @@ export function geometryToSvg(geometry, { width = 900, height = 600, padding = 2
       }
     }
     chunks.push('</g>');
-    const sizeText = part.profile.type === 'rectangle' ? `${part.profile.width} × ${part.profile.height} mm` : part.profile.type === 'quadrilateral' ? `Top ${part.profile.lengths.top} · Bottom ${part.profile.lengths.bottom} · Left ${part.profile.lengths.left} · Right ${part.profile.lengths.right} mm` : `Ø${part.profile.diameter} mm`;
+    const sizeText = part.profile.type === 'rectangle' ? `${part.profile.width} × ${part.profile.height} mm`
+      : part.profile.type === 'quadrilateral' ? `Top ${part.profile.lengths.top} · Bottom ${part.profile.lengths.bottom} · Left ${part.profile.lengths.left} · Right ${part.profile.lengths.right} mm`
+        : part.profile.type === 'path' ? `Measured perimeter · ${part.profile.segments.length} segments`
+          : `Ø${part.profile.diameter} mm`;
     chunks.push(`<text x="${x0 + padding}" y="${y0 + cellH - 8}" font-family="system-ui,sans-serif" font-size="12" fill="#475467">${esc(sizeText)}</text>`);
   });
   chunks.push('</svg>');

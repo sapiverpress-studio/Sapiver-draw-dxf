@@ -5,6 +5,7 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const app = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
 const share = fs.readFileSync(new URL('../share-release.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../job-v4.css', import.meta.url), 'utf8');
+const geometryPreviewCss = fs.readFileSync(new URL('../geometry-preview.css', import.meta.url), 'utf8');
 
 const selectorIds = [...app.matchAll(/\$\('#([^']+)'\)/g)].map((m) => m[1]);
 for (const id of selectorIds) {
@@ -27,12 +28,16 @@ assert.match(html, /id="manualDrawingBtn"/, 'manual drawing entry must be presen
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
 assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(app, /dataset\.reviewGroup = slots\.every\(isPerimeterSlot\)/, 'review groups must classify profile and path-segment slots as perimeter controls');
-assert.match(app, /URL\.createObjectURL\(new Blob\(\[svg\]/, 'generated drawings must use a browser-safe SVG object URL');
+assert.match(html, /id="geometryPreview" class="geometry-svg-preview"/, 'generated drawing must have an inline SVG host');
+assert.match(html, /geometry-preview\.css/, 'inline geometry preview styles must be loaded');
+assert.match(geometryPreviewCss, /geometry-svg-preview svg/, 'inline geometry SVG must have responsive sizing');
+assert.match(app, /template\.innerHTML = svg\.trim\(\)/, 'generated drawings must render as inline SVG without a temporary image URL');
+assert.doesNotMatch(app, /geometryPreviewObjectUrl|URL\.createObjectURL\(new Blob\(\[svg\]/, 'generated drawing must not depend on a revocable object URL');
 assert.match(app, /Clarification needed/, 'real AI ambiguities must be shown as focused operator questions');
 assert.match(html, /id="purgeJobBtn"/, 'protected permanent deletion control must be present');
 assert.match(html, /assets\/halifaxglass-logo\.svg/, 'Halifax Glass logo must be present in the tool header');
 assert.match(html, /halifax-glass\.css/, 'Halifax Glass visual theme must be loaded');
-assert.match(html, /Version 2026\.09\.10 · 18:27 UTC/, 'deployed interface must show its timestamped version');
+assert.match(html, /Version 2026\.09\.11 · 05:15 UTC/, 'deployed interface must show its timestamped version');
 assert.match(app, /permanent: 'true'/, 'permanent deletion must call the protected server operation');
 assert.match(css, /img\[hidden\]\{display:none!important\}/, 'hidden preview images must stay hidden even when image CSS sets display:block');
 

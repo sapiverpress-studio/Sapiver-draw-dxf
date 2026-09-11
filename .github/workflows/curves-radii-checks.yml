@@ -1,0 +1,37 @@
+name: Curves and radii checks
+
+on:
+  push:
+    branches: [feature/curves-radii]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax checks
+        run: |
+          node --check core/curves.js
+          node --check core/geometry.js
+          node --check core/geometry-legacy.js
+          node --check core/review-model.js
+          node --check core/review-model-legacy.js
+          node --check netlify/functions/_quick-dxf-analysis.mjs
+          node --check netlify/functions/_quick-dxf-analysis-legacy.mjs
+      - name: Existing deterministic regression suite
+        run: |
+          node tests/geometry.test.mjs
+          node tests/review-model.test.mjs
+          node tests/irregular-notches.test.mjs
+          node tests/internet-drawing-matrix.test.mjs
+          node tests/analyser-contract.test.mjs
+      - name: Curves and radii tests
+        run: node tests/curves-radii.test.mjs

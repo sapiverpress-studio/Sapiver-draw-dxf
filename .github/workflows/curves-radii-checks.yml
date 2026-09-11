@@ -33,5 +33,10 @@ jobs:
           node tests/irregular-notches.test.mjs
           node tests/internet-drawing-matrix.test.mjs
           node tests/analyser-contract.test.mjs
+          node tests/access-auth.test.mjs
+          node tests/job-delete.test.mjs
+          node tests/release-share.test.mjs
+          node tests/ui-contract.test.mjs
+          node tests/zip.test.mjs
       - name: Curves and radii tests
         run: node tests/curves-radii.test.mjs

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import { compileSourceGeometry } from '../core/geometry.js';
 import { buildDxf } from '../core/dxf.js';
+import { ANALYSIS_PROMPT } from '../netlify/functions/_quick-dxf-analysis.mjs';
 
 const dim = (id, valueMm, reference = 'size', fromEdge = 'unknown') => ({ id, label:id, role:reference === 'size' ? 'size' : 'position', valueMm, reference, fromEdge, confirmed:true });
 const feature = (id, type, values = {}) => ({ id, type, quantity:1, ...values });
@@ -41,8 +41,7 @@ for (const test of cases) {
   results.push({name:test.name,reference:test.source,result:actual,reason:geometry.errors[0] || 'DXF generated',issue});
 }
 
-const prompt = fs.readFileSync(new URL('../netlify/functions/_quick-dxf-analysis.mjs', import.meta.url), 'utf8');
-assert.match(prompt,/small square[\s\S]*explicit 90-degree indication/i,'AI prompt must recognise square right-angle marks');
-assert.match(prompt,/bottom length, left height and right height[\s\S]*both bottom corners/i,'AI prompt must recognise constrained tapered panels without a written top length');
+assert.match(ANALYSIS_PROMPT,/small square[\s\S]*explicit 90-degree indication/i,'AI prompt must recognise square right-angle marks');
+assert.match(ANALYSIS_PROMPT,/bottom length, left height and right height[\s\S]*both bottom corners/i,'AI prompt must recognise constrained tapered panels without a written top length');
 
 console.log(JSON.stringify({total:results.length,supported:results.filter((r)=>r.result==='supported').length,blocked:results.filter((r)=>r.result==='blocked').length,issues:results.filter((r)=>r.issue).length,results},null,2));

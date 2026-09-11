@@ -45,11 +45,27 @@ const pathYs = path.points.map((p) => p.y);
 close(Math.max(...pathXs) - Math.min(...pathXs), 1200);
 close(Math.max(...pathYs) - Math.min(...pathYs), 1200);
 
+// A perimeter may contain multiple independently solved circular arcs.
+const compoundPath = buildCurvedPath([
+  { id: 'bottom', kind: 'horizontal', direction: 'right', length: 400 },
+  { id: 'right', kind: 'arc', direction: 'up', chord: 200, radius: 150, bulgeSide: 'left', extent: 'minor' },
+  { id: 'top', kind: 'horizontal', direction: 'left', length: 400 },
+  { id: 'left', kind: 'connect_arc', direction: 'connect', radius: 150, bulgeSide: 'left', extent: 'minor' },
+]);
+assert.equal(compoundPath.entities.filter((entity) => entity.type === 'arc').length, 2);
+assert.equal((buildDxf(compoundPath.entities).match(/\r\nARC\r\n/g) || []).length, 2);
+
 // Shallow circular arches are solved from the confirmed chord and radius, not image scale.
 const shallow = arcFromChord({ x: 0, y: 0 }, { x: 1200, y: 0 }, 800, { bulgeSide: 'left', extent: 'minor' });
 const expectedRise = 800 - Math.sqrt(800 ** 2 - 600 ** 2);
 const shallowRise = Math.max(...shallow.previewPoints.map((p) => p.y));
 close(shallowRise, expectedRise, 0.2, 'shallow arch rise');
+const minor = arcFromChord({ x: 0, y: 0 }, { x: 100, y: 0 }, 75, { bulgeSide: 'left', extent: 'minor' });
+const major = arcFromChord({ x: 0, y: 0 }, { x: 100, y: 0 }, 75, { bulgeSide: 'left', extent: 'major' });
+assert.ok(Math.abs(minor.travelSweepDeg) < 180, 'minor arc sweep must be below 180 degrees');
+assert.ok(Math.abs(major.travelSweepDeg) > 180, 'major arc sweep must be above 180 degrees');
+assert.ok(minor.previewPoints[Math.floor(minor.previewPoints.length / 2)].y > 0, 'minor arc must bulge to the confirmed side');
+assert.ok(major.previewPoints[Math.floor(major.previewPoints.length / 2)].y > 0, 'major arc must bulge to the confirmed side');
 assert.throws(
   () => arcFromChord({ x: 0, y: 0 }, { x: 1200, y: 0 }, 500, { bulgeSide: 'left' }),
   /longer than the diameter/i,
@@ -165,6 +181,43 @@ assert.equal(roundedGeometry.ok, true, roundedGeometry.errors.join('\n'));
 assert.equal(roundedGeometry.parts[0].entities.filter((entity) => entity.type === 'arc').length, 4);
 assert.equal((buildDxf(roundedGeometry.parts[0].entities).match(/\r\nARC\r\n/g) || []).length, 4);
 
+// A conventional "4 x R50" callout may link all four corners to one dimension.
+const repeatedRadiusSource = structuredClone(roundedSource);
+for (const radius of repeatedRadiusSource.analysis.parts[0].profile.corner_radii) {
+  radius.radius_mm = 50;
+  radius.radius_dimension_id = 'r1';
+}
+repeatedRadiusSource.analysis.parts[0].dimension_ids = ['w', 'h', 'r1'];
+repeatedRadiusSource.dimensions = repeatedRadiusSource.dimensions.filter((item) => ['w', 'h', 'r1'].includes(item.id));
+const repeatedRadiusGeometry = compileSourceGeometry(repeatedRadiusSource);
+assert.equal(repeatedRadiusGeometry.ok, true, repeatedRadiusGeometry.errors.join('\n'));
+assert.equal(repeatedRadiusGeometry.parts[0].entities.filter((entity) => entity.type === 'arc').length, 4);
+
+const unconfirmedRadiusSource = structuredClone(archSource);
+unconfirmedRadiusSource.dimensions.find((item) => item.id === 'radius').confirmed = false;
+const unconfirmedRadiusGeometry = compileSourceGeometry(unconfirmedRadiusSource);
+assert.equal(unconfirmedRadiusGeometry.ok, false);
+assert.match(unconfirmedRadiusGeometry.errors.join('\n'), /confirm.*radius|radius.*confirm/i);
+
+const mismatchedArcSource = structuredClone(archSource);
+mismatchedArcSource.dimensions.find((item) => item.id === 'radius').valueMm = 500;
+const mismatchedArcGeometry = compileSourceGeometry(mismatchedArcSource);
+assert.equal(mismatchedArcGeometry.ok, false);
+assert.match(mismatchedArcGeometry.errors.join('\n'), /longer than the diameter/i);
+
+// Reject a feature whose confirmed extent crosses a curved perimeter.
+const crossingHoleSource = structuredClone(archSource);
+const crossingHole = crossingHoleSource.analysis.parts[0].features[0];
+crossingHole.diameter_mm = 200;
+crossingHole.x_mm = 100;
+crossingHole.y_mm = 1100;
+crossingHoleSource.dimensions.find((item) => item.id === 'dia').valueMm = 200;
+crossingHoleSource.dimensions.find((item) => item.id === 'x').valueMm = 100;
+crossingHoleSource.dimensions.find((item) => item.id === 'y').valueMm = 1100;
+const crossingHoleGeometry = compileSourceGeometry(crossingHoleSource);
+assert.equal(crossingHoleGeometry.ok, false);
+assert.match(crossingHoleGeometry.errors.join('\n'), /outside|cross/i);
+
 // Old working geometry stays on the exact legacy route when no curve primitives are present.
 const legacySource = {
   analysis: { parts: [{ id: 'plain', label: 'Plain panel', profile: { type: 'rectangle', width_mm: 1000, height_mm: 500, width_dimension_id: 'w', height_dimension_id: 'h', diameter_mm: null, diameter_dimension_id: null, confidence: 'high' }, features: [], dimension_ids: ['w', 'h'] }] },
@@ -172,6 +225,11 @@ const legacySource = {
 };
 assert.deepEqual(compileSourceGeometry(structuredClone(legacySource)), legacyGeometry.compileSourceGeometry(structuredClone(legacySource)), 'non-curve geometry facade must preserve exact legacy behaviour');
 assert.deepEqual(geometrySlots(structuredClone(legacySource)), legacyReview.geometrySlots(structuredClone(legacySource)), 'non-curve review facade must preserve exact legacy slot behaviour');
+
+const ellipseSource = structuredClone(legacySource);
+ellipseSource.analysis.parts[0].profile.type = 'ellipse';
+const ellipseGeometry = compileSourceGeometry(ellipseSource);
+assert.equal(ellipseGeometry.ok, false, 'unsupported ellipse geometry must not reach production');
 
 // Analyzer contract includes explicit radius/chord primitives and template fallback for undefined freeform curves.
 assert.match(ANALYSIS_PROMPT, /Template required:/i);

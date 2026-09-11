@@ -22,6 +22,7 @@ jobs:
           node --check core/curves.js
           node --check core/geometry.js
           node --check core/geometry-legacy.js
+          node --check core/confirmation-pdf.js
           node --check core/review-model.js
           node --check core/review-model-legacy.js
           node --check netlify/functions/_quick-dxf-analysis.mjs
@@ -34,6 +35,7 @@ jobs:
           node tests/internet-drawing-matrix.test.mjs
           node tests/internet-curves-matrix.test.mjs
           node tests/analyser-contract.test.mjs
+          node tests/confirmation-pdf.test.mjs
           node tests/access-auth.test.mjs
           node tests/job-delete.test.mjs
           node tests/release-share.test.mjs

@@ -8,7 +8,7 @@ function finitePositive(value) { return Number.isFinite(Number(value)) && Number
 function hasCurvePart(part) {
   const profile=part?.profile||{};
   return (profile.type==='rectangle' && Array.isArray(profile.corner_radii) && profile.corner_radii.length>0)
-    || (profile.type==='path' && (profile.boundary_segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind)));
+    || (profile.type==='path' && (profile.boundary_segments||[]).some((segment)=>['arc','quarter_arc','connect_arc'].includes(segment.kind)));
 }
 function hasRadiusedFeature(part) {
   return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));
@@ -283,6 +283,10 @@ function compileCurvedPart(part,dimensionMap,errors){
       if(['horizontal','vertical'].includes(segment.kind)){
         const d=resolveDimension(dimensionMap,segment.dimension_id,name,errors); if(!d)return null;
         compiled.push({...segment,length:Number(d.valueMm)});
+      } else if(segment.kind==='quarter_arc'){
+        const radius=resolveDimension(dimensionMap,segment.radius_dimension_id,`${name} radius`,errors); if(!radius)return null;
+        if(!['left','right'].includes(segment.turn_direction)){errors.push(`${name}: quarter-arc turn direction is unresolved.`);return null;}
+        compiled.push({...segment,radius:Number(radius.valueMm),turnDirection:segment.turn_direction});
       } else if(segment.kind==='arc'){
         const chord=resolveDimension(dimensionMap,segment.chord_dimension_id,`${name} chord`,errors);
         const radius=segment.radius_dimension_id?resolveDimension(dimensionMap,segment.radius_dimension_id,`${name} radius`,errors):null;

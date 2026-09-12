@@ -14,6 +14,7 @@ CURVED PERIMETER RULES — apply these in addition to the existing geometry-firs
 - For an internal rectangular cut-out with explicitly figured rounded corners, keep type rectangular_cutout and link the corner radius to radius_dimension_id. Do not convert it to a slot unless both ends are genuinely semicircular.
 - Treat R6 and R15 beside an internal cut-out, socket opening or patch cut-out as that feature's internal corner radius when the leader or note clearly identifies it. Never discard the radius or return a sharp-cornered feature instead.
 - For a radiused corner_notch, the radius applies to its one internal concave corner. For a radiused edge_notch, it applies to both internal concave corners unless the drawing explicitly dimensions them differently.
+- When a path must contain a figured 90-degree radiused transition, use kind quarter_arc. Set direction to the incoming tangent travel and turn_direction to left or right. Link only radius_dimension_id; a quarter_arc never requires a chord or rise. Use this for R6/R15 concave notch transitions rather than inventing a chord requirement.
 - Halifax Glass manufacturing limits are R15 minimum for polished/CNC cut-outs and R6 minimum for unpolished cut-outs. Set cutout_finish only when the drawing explicitly states the process; otherwise use unknown. The operator must confirm the process before release.
 - For a general dimensioned curved outline, use profile type path. Trace boundary_segments in order around the perimeter.
 - Use kind arc when the arc chord/span is itself figured. direction describes chord travel (left/right/up/down), chord_dimension_id links the confirmed chord/span, bulge_side is left or right relative to chord travel, and arc_extent is minor, major or semicircle. Link either a figured radius or a figured rise/sagitta; link both when both are shown so deterministic code can check consistency.
@@ -30,7 +31,7 @@ export const ANALYSIS_SCHEMA = clone(LEGACY_SCHEMA);
 
 const profile = ANALYSIS_SCHEMA.properties.parts.items.properties.profile;
 const segment = profile.properties.boundary_segments.items;
-segment.properties.kind.enum = ['horizontal','vertical','arc','connect','connect_arc'];
+segment.properties.kind.enum = ['horizontal','vertical','arc','quarter_arc','connect','connect_arc'];
 segment.properties.direction.enum = ['left','right','up','down','connect'];
 Object.assign(segment.properties, {
   chord_mm: { type:['number','null'] },
@@ -41,8 +42,9 @@ Object.assign(segment.properties, {
   rise_dimension_id: { type:['string','null'] },
   bulge_side: { type:'string', enum:['left','right','none'] },
   arc_extent: { type:'string', enum:['minor','major','semicircle','none'] },
+  turn_direction: { type:'string', enum:['left','right','none'] },
 });
-for (const field of ['chord_mm','chord_dimension_id','radius_mm','radius_dimension_id','rise_mm','rise_dimension_id','bulge_side','arc_extent']) {
+for (const field of ['chord_mm','chord_dimension_id','radius_mm','radius_dimension_id','rise_mm','rise_dimension_id','bulge_side','arc_extent','turn_direction']) {
   if (!segment.required.includes(field)) segment.required.push(field);
 }
 profile.properties.corner_radii = {
@@ -102,6 +104,20 @@ export function linkExplicitDimensionTargets(extraction){
 
 export function enforceAnalysisChecks(extraction){
   if(!extraction||typeof extraction!=='object')return extraction;
+  for(const part of extraction.parts||[]){
+    const segments=part?.profile?.boundary_segments||[];
+    const vector=(direction)=>direction==='right'?[1,0]:direction==='left'?[-1,0]:direction==='up'?[0,1]:direction==='down'?[0,-1]:null;
+    for(let index=0;index<segments.length;index++){
+      const segment=segments[index];
+      if(segment?.kind!=='arc'||segment.chord_dimension_id||Number(segment.chord_mm)>0||!(segment.radius_dimension_id||Number(segment.radius_mm)>0))continue;
+      if(!/(notch|corner|transition|ledge|recess)/i.test(String(segment.label||'')))continue;
+      const previous=segments[(index-1+segments.length)%segments.length],next=segments[(index+1)%segments.length];
+      const incoming=vector(previous?.direction),outgoing=vector(next?.direction);
+      if(!incoming||!outgoing||incoming[0]*outgoing[0]+incoming[1]*outgoing[1]!==0)continue;
+      const cross=incoming[0]*outgoing[1]-incoming[1]*outgoing[0];
+      segment.kind='quarter_arc';segment.direction=previous.direction;segment.turn_direction=cross>0?'left':'right';segment.arc_extent='none';segment.bulge_side='none';
+    }
+  }
   const uncertainties=Array.isArray(extraction.uncertainties)?extraction.uncertainties:[];
   if(uncertainties.some((message)=>/^template required:/i.test(String(message).trim()))){
     extraction.analysis_checks ||= {};

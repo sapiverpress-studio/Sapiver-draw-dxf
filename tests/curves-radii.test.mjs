@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { arcFromChord, buildCurvedPath, buildRoundedRectangle, radiusFromChordRise } from '../core/curves.js';
+import { arcFromChord, buildCurvedPath, buildRoundedRectangle, quarterArcFromTangent, radiusFromChordRise } from '../core/curves.js';
 import { compileSourceGeometry, geometryToSvg } from '../core/geometry.js';
 import * as legacyGeometry from '../core/geometry-legacy.js';
 import { buildDxf } from '../core/dxf.js';
@@ -83,6 +83,18 @@ const diagonalClosingArc = buildCurvedPath([
   { id: 'top', kind: 'connect_arc', direction: 'connect', radius: 1000, bulgeSide: 'left', extent: 'minor' },
 ]);
 assert.equal(diagonalClosingArc.entities.filter((entity) => entity.type === 'arc').length, 1);
+
+const twoNotchFillets = buildCurvedPath([
+  { id:'lower',kind:'horizontal',direction:'right',length:100 },
+  { id:'first-r15',kind:'quarter_arc',direction:'right',turnDirection:'left',radius:15 },
+  { id:'side',kind:'vertical',direction:'up',length:70 },
+  { id:'second-r15',kind:'quarter_arc',direction:'up',turnDirection:'left',radius:15 },
+  { id:'upper',kind:'horizontal',direction:'left',length:100 },
+  { id:'close',kind:'connect',direction:'connect' },
+]);
+assert.equal(twoNotchFillets.entities.filter((entity)=>entity.type==='arc').length,2,'two radius-only notch transitions must create two exact arcs');
+for(const entity of twoNotchFillets.entities.filter((entity)=>entity.type==='arc')) assert.equal(entity.r,15);
+assert.doesNotThrow(()=>quarterArcFromTangent({x:0,y:0},6,'right','left'));
 
 // Independent external corner radii use exact quarter-circle ARC entities.
 const rounded = buildRoundedRectangle(1000, 500, {
@@ -366,8 +378,9 @@ assert.match(ANALYSIS_PROMPT, /wavy, freehand, spline-like, organic/i);
 const profileSchema = ANALYSIS_SCHEMA.properties.parts.items.properties.profile;
 assert.ok(profileSchema.required.includes('corner_radii'));
 const segmentSchema = profileSchema.properties.boundary_segments.items;
-for (const field of ['chord_mm', 'chord_dimension_id', 'radius_mm', 'radius_dimension_id', 'rise_mm', 'rise_dimension_id', 'bulge_side', 'arc_extent']) assert.ok(segmentSchema.required.includes(field), `boundary segment must require ${field}`);
+for (const field of ['chord_mm', 'chord_dimension_id', 'radius_mm', 'radius_dimension_id', 'rise_mm', 'rise_dimension_id', 'bulge_side', 'arc_extent', 'turn_direction']) assert.ok(segmentSchema.required.includes(field), `boundary segment must require ${field}`);
 assert.ok(segmentSchema.properties.kind.enum.includes('arc'));
+assert.ok(segmentSchema.properties.kind.enum.includes('quarter_arc'));
 assert.ok(segmentSchema.properties.kind.enum.includes('connect_arc'));
 
 const linkedExtraction = {
@@ -392,6 +405,30 @@ assert.equal(linkedExtraction.parts[0].profile.boundary_segments[0].chord_dimens
 assert.equal(linkedExtraction.parts[0].profile.boundary_segments[0].radius_dimension_id, 'r');
 assert.equal(linkedExtraction.parts[0].profile.boundary_segments[0].rise_dimension_id, 'rise');
 assert.equal(linkedExtraction.parts[0].profile.corner_radii[0].radius_dimension_id, 'cr');
+
+const duplicatedFalseChordExtraction = {
+  production_ready:true, requires_human_review:false, uncertainties:[],
+  analysis_checks:{perimeter_traced:true,dimension_targets_followed:true,all_clear_figures_linked:true,square_markers_classified:true,perimeter_topology_closes:true,unsupported_geometry_present:false},
+  dimensions:[],
+  parts:[{id:'p1',profile:{type:'path',corner_radii:[],boundary_segments:[
+    {id:'ledge-1',kind:'horizontal',direction:'right',dimension_id:'l1'},
+    {id:'r6',label:'R6 concave notch transition',kind:'arc',direction:'right',chord_mm:null,chord_dimension_id:null,radius_mm:6,radius_dimension_id:'r6d',rise_mm:null,rise_dimension_id:null,bulge_side:'left',arc_extent:'minor',turn_direction:'none'},
+    {id:'drop',kind:'vertical',direction:'up',dimension_id:'drop'},
+    {id:'r15',label:'R15 concave transition into ledge',kind:'arc',direction:'up',chord_mm:null,chord_dimension_id:null,radius_mm:15,radius_dimension_id:'r15d',rise_mm:null,rise_dimension_id:null,bulge_side:'left',arc_extent:'minor',turn_direction:'none'},
+    {id:'ledge-2',kind:'horizontal',direction:'left',dimension_id:'l2'},
+    {id:'close',kind:'connect',direction:'connect'},
+  ]},features:[],dimension_ids:[]}],
+};
+enforceAnalysisChecks(duplicatedFalseChordExtraction);
+const repairedTransitions=duplicatedFalseChordExtraction.parts[0].profile.boundary_segments.filter((segment)=>segment.id==='r6'||segment.id==='r15');
+assert.deepEqual(repairedTransitions.map((segment)=>segment.kind),['quarter_arc','quarter_arc'],'both radius-only notch transitions must be repaired');
+const repairedSource={analysis:duplicatedFalseChordExtraction,dimensions:[dim('l1',100),dim('r6d',6),dim('drop',70),dim('r15d',15),dim('l2',100)]};
+const repairedSlots=geometrySlots(repairedSource);
+assert.equal(repairedSlots.filter((slot)=>slot.parameter==='chord').length,0,'repaired notch transitions must never ask the operator for chord values');
+assert.equal(repairedSlots.filter((slot)=>slot.parameter==='radius').length,2,'each repaired notch transition keeps its own radius confirmation');
+const repairedGeometry=compileSourceGeometry(repairedSource);
+assert.equal(repairedGeometry.ok,true,repairedGeometry.errors?.join('\n'));
+assert.equal(repairedGeometry.parts[0].entities.filter((entity)=>entity.type==='arc').length,2,'both repaired transitions must reach deterministic DXF geometry');
 
 const template = enforceAnalysisChecks({
   production_ready: true,

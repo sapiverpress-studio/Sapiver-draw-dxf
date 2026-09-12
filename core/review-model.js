@@ -7,7 +7,7 @@ function partName(part,index){return String(part?.label||part?.id||`Part ${index
 function hasCurvePart(part){
   const profile=part?.profile||{};
   return (profile.type==='rectangle'&&Array.isArray(profile.corner_radii)&&profile.corner_radii.length>0)
-    || (profile.type==='path'&&(profile.boundary_segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind)));
+    || (profile.type==='path'&&(profile.boundary_segments||[]).some((segment)=>['arc','quarter_arc','connect_arc'].includes(segment.kind)));
 }
 function hasRadiusedFeature(part){return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));}
 function hasCurveGeometry(source){return (source?.analysis?.parts||[]).some((part)=>hasCurvePart(part)||hasRadiusedFeature(part));}
@@ -25,7 +25,9 @@ function curveProfileSlots(part,partIndex){
     for(let index=0;index<(profile.boundary_segments||[]).length;index++){
       const segment=profile.boundary_segments[index],base={partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'segment',segmentIndex:index};
       if(segment.kind==='connect') continue;
-      if(segment.kind==='connect_arc'){
+      if(segment.kind==='quarter_arc'){
+        slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter transition ${index+1}`} radius`});
+      } else if(segment.kind==='connect_arc'){
         if(segment.radius_dimension_id||finitePositive(segment.radius_mm)||!segment.rise_dimension_id&&!finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
         if(segment.rise_dimension_id||finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:rise`,parameter:'rise',field:'rise_dimension_id',valueField:'rise_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} rise`});
       } else if(segment.kind==='arc'){

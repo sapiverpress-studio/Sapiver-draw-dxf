@@ -117,6 +117,35 @@ export function lineEntity(start, end, { role = 'outer', label = 'Line' } = {}) 
   return { type: 'polyline', points: [point(start.x, start.y), point(end.x, end.y)], closed: false, role, label };
 }
 
+function directionVector(direction) {
+  if (direction === 'right') return [1, 0];
+  if (direction === 'left') return [-1, 0];
+  if (direction === 'up') return [0, 1];
+  if (direction === 'down') return [0, -1];
+  throw new Error(`Invalid tangent direction ${direction || 'unknown'}.`);
+}
+
+export function quarterArcFromTangent(start, radius, direction, turnDirection, { role = 'outer', label = 'Quarter arc' } = {}) {
+  radius = Number(radius);
+  if (!(radius > EPS)) throw new Error(`${label}: radius must be positive.`);
+  const [vx, vy] = directionVector(direction);
+  const turn = turnDirection === 'right' ? -1 : turnDirection === 'left' ? 1 : 0;
+  if (!turn) throw new Error(`${label}: turn direction must be left or right.`);
+  const nx = turn > 0 ? -vy : vy;
+  const ny = turn > 0 ? vx : -vx;
+  const cx = start.x + nx * radius;
+  const cy = start.y + ny * radius;
+  const startDeg = Math.atan2(start.y - cy, start.x - cx) * 180 / Math.PI;
+  const sweep = turn * 90;
+  return {
+    type: 'arc', cx, cy, r: radius,
+    startDeg: normaliseDeg(sweep > 0 ? startDeg : startDeg + sweep),
+    endDeg: normaliseDeg(sweep > 0 ? startDeg + sweep : startDeg),
+    travelStartDeg: startDeg, travelSweepDeg: sweep,
+    previewPoints: sampleSweep(cx, cy, radius, startDeg, sweep, 12), role, label,
+  };
+}
+
 export function translateEntity(entity, dx, dy) {
   if (entity.type === 'circle' || entity.type === 'arc') {
     return {
@@ -144,6 +173,16 @@ export function buildCurvedPath(compiledSegments, { label = 'Measured perimeter'
 
   const vectors = compiledSegments.map((segment) => {
     if (['connect', 'connect_arc'].includes(segment.kind)) return null;
+    if (segment.kind === 'quarter_arc') {
+      const radius = Number(segment.radius);
+      if (!(radius > 0)) throw new Error(`${label} / ${segment.label || segment.id}: quarter-arc radius must be positive.`);
+      const [vx, vy] = directionVector(segment.direction);
+      const turn = segment.turnDirection === 'right' ? -1 : segment.turnDirection === 'left' ? 1 : 0;
+      if (!turn) throw new Error(`${label} / ${segment.label || segment.id}: quarter-arc turn direction must be left or right.`);
+      const wx = turn > 0 ? -vy : vy;
+      const wy = turn > 0 ? vx : -vx;
+      return [radius * (vx + wx), radius * (vy + wy)];
+    }
     const span = segment.kind === 'arc' ? Number(segment.chord) : Number(segment.length);
     if (!(span > 0)) throw new Error(`${label} / ${segment.label || segment.id}: segment span must be positive.`);
     const direction = segment.direction;
@@ -165,7 +204,11 @@ export function buildCurvedPath(compiledSegments, { label = 'Measured perimeter'
     const vector = vectors[index];
     const end = point(cursor.x + vector[0], cursor.y + vector[1]);
     let entity;
-    if (segment.kind === 'arc' || segment.kind === 'connect_arc') {
+    if (segment.kind === 'quarter_arc') {
+      entity = quarterArcFromTangent(cursor, segment.radius, segment.direction, segment.turnDirection, {
+        role: 'outer', label: segment.label || segment.id || 'Quarter arc',
+      });
+    } else if (segment.kind === 'arc' || segment.kind === 'connect_arc') {
       const chord = Math.hypot(end.x - cursor.x, end.y - cursor.y);
       const radius = Number(segment.radius) > 0
         ? Number(segment.radius)

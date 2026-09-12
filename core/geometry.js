@@ -349,7 +349,7 @@ export function compileSourceGeometry(source){
 }
 
 function esc(value){return String(value).replace(/[&<>"']/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-export function geometryToSvg(geometry,{width=900,height=600,padding=28}={}){
+export function geometryToSvg(geometry,{width=900,height=600,padding=28,entityState=null}={}){
   if(!geometry?.parts?.some((part)=>part.entities?.some((entity)=>entity.type==='arc'))) return legacy.geometryToSvg(geometry,{width,height,padding});
   if(!geometry?.parts?.length)return '';
   const cols=geometry.parts.length>1?2:1,rows=Math.ceil(geometry.parts.length/cols),cellW=width/cols,cellH=height/rows;
@@ -358,20 +358,23 @@ export function geometryToSvg(geometry,{width=900,height=600,padding=28}={}){
     const x0=(index%cols)*cellW,y0=Math.floor(index/cols)*cellH,labelH=30,availW=cellW-padding*2,availH=cellH-padding*2-labelH;
     const scale=Math.min(availW/part.bounds.width,availH/part.bounds.height),ox=x0+(cellW-part.bounds.width*scale)/2,oy=y0+labelH+(availH-part.bounds.height*scale)/2+padding;
     chunks.push(`<text x="${x0+padding}" y="${y0+22}" font-family="system-ui,sans-serif" font-size="15" font-weight="700" fill="#111827">${esc(part.label)}</text>`);
-    chunks.push(`<g transform="translate(${ox} ${oy+part.bounds.height*scale}) scale(${scale} ${-scale})" fill="none" stroke="#111827" vector-effect="non-scaling-stroke">`);
+    chunks.push(`<g transform="translate(${ox} ${oy+part.bounds.height*scale}) scale(${scale} ${-scale})" fill="none" vector-effect="non-scaling-stroke">`);
     for(const entity of part.entities){
       const sw=(entity.role==='outer'?2:1.4)/scale;
-      if(entity.type==='circle') chunks.push(`<circle cx="${entity.cx}" cy="${entity.cy}" r="${entity.r}" stroke-width="${sw}"/>`);
-      else if(entity.type==='arc') chunks.push(`<polyline points="${entitySamplePoints(entity).map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}"/>`);
-      else if(entity.closed===false) chunks.push(`<polyline points="${entity.points.map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}"/>`);
-      else chunks.push(`<polygon points="${entity.points.map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}"/>`);
+      const state=typeof entityState==='function'?entityState(entity,part):'confirmed';
+      const pending=state==='pending',style=`data-state="${pending?'pending':'confirmed'}" stroke="${pending?'#98a2b3':'#00549f'}" ${pending?'stroke-dasharray="8 6"':''}`;
+      if(entity.type==='circle') chunks.push(`<circle cx="${entity.cx}" cy="${entity.cy}" r="${entity.r}" stroke-width="${sw}" ${style}/>`);
+      else if(entity.type==='arc') chunks.push(`<polyline points="${entitySamplePoints(entity).map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}" ${style}/>`);
+      else if(entity.closed===false) chunks.push(`<polyline points="${entity.points.map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}" ${style}/>`);
+      else chunks.push(`<polygon points="${entity.points.map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}" ${style}/>`);
     }
     chunks.push('</g>');
     const rounded=(value)=>Math.round(Number(value)*100)/100;
     const text=part.profile.type==='rectangle'
       ?`${part.profile.width} × ${part.profile.height} mm · radius corners`
       :`Measured curved perimeter · Overall ${rounded(part.bounds.width)} × ${rounded(part.bounds.height)} mm (calculated) · ${part.profile.segments?.length||0} segments`;
-    chunks.push(`<text x="${x0+padding}" y="${y0+cellH-8}" font-family="system-ui,sans-serif" font-size="12" fill="#475467">${esc(text)}</text>`);
+    const footer=entityState?`${text} · Blue confirmed · Grey dashed awaiting confirmation`:text;
+    chunks.push(`<text x="${x0+padding}" y="${y0+cellH-8}" font-family="system-ui,sans-serif" font-size="12" fill="#475467">${esc(footer)}</text>`);
   });
   chunks.push('</svg>');return chunks.join('');
 }

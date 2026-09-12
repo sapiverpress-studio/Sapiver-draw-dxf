@@ -169,9 +169,14 @@ assert.doesNotMatch(archSvg, /NaN|undefined/);
 const toughenedArchSource=structuredClone(archSource);
 toughenedArchSource.toughened=true;
 toughenedArchSource.glassThicknessMm=10;
+// The curved perimeter itself must not create a manual-manager gate. Feature
+// clearance behaviour is covered separately by the toughened safety tests.
+toughenedArchSource.analysis.parts[0].features=[];
+toughenedArchSource.analysis.parts[0].dimension_ids=['right','bottom','left','radius'];
+toughenedArchSource.dimensions=toughenedArchSource.dimensions.filter((item)=>['right','bottom','left','radius'].includes(item.id));
 const toughenedArchGeometry=compileSourceGeometry(toughenedArchSource);
-assert.equal(toughenedArchGeometry.ok,false);
-assert.match(toughenedArchGeometry.errors.join('\n'),/toughened corner clearance on a curved outer profile requires a production-manager check/i);
+assert.equal(toughenedArchGeometry.ok,true,toughenedArchGeometry.errors.join('\n'));
+assert.doesNotMatch(toughenedArchGeometry.errors.join('\n'),/production-manager/i);
 
 const riseArchSource = structuredClone(archSource);
 const riseArc = riseArchSource.analysis.parts[0].profile.boundary_segments.find((segment) => segment.kind === 'connect_arc');

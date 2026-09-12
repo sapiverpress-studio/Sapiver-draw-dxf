@@ -164,6 +164,7 @@ assert.match(archDxf, /\r\nARC\r\n/);
 assert.match(archDxf, /\r\nCIRCLE\r\n/);
 const archSvg = geometryToSvg(archGeometry);
 assert.match(archSvg, /polyline/);
+assert.match(archSvg, /Overall .* × .* mm \(calculated\)/);
 assert.doesNotMatch(archSvg, /NaN|undefined/);
 
 const toughenedArchSource=structuredClone(archSource);

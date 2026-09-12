@@ -17,6 +17,9 @@ CURVED PERIMETER RULES — apply these in addition to the existing geometry-firs
 - When a path must contain a figured 90-degree radiused transition, use kind quarter_arc. Set direction to the incoming tangent travel and turn_direction to left or right. Link only radius_dimension_id; a quarter_arc never requires a chord or rise. Use this for R6/R15 concave notch transitions rather than inventing a chord requirement.
 - Halifax Glass manufacturing limits are R15 minimum for polished/CNC cut-outs and R6 minimum for unpolished cut-outs. Set cutout_finish only when the drawing explicitly states the process; otherwise use unknown. The operator must confirm the process before release.
 - For a general dimensioned curved outline, use profile type path. Trace boundary_segments in order around the perimeter.
+- A curved outline with shoulders, steps or recesses must include every straight shoulder and every vertical rise/drop as its own boundary segment. The arc must join the actual arc endpoints, not the outside vertical sides. For each figured straight path segment, target the exact segment id using p1.profile.segments.sN.length. Do not use descriptive pseudo-fields such as "shoulder height" when the profile is a path.
+- Before returning a path, walk its boundary_segments in order and compare them with the visible outline. If the source shows a shoulder on either side of an arch, the path must contain the horizontal shoulder plus its adjoining vertical rise/drop on that side. Never omit these segments merely because the arc can be closed between the outer sides.
+- Never assign an overall panel width to a shoulder, rise or drop. Never assign a radius figure to a straight segment. A shoulder/step value must be the figure whose dimension line terminates on that shoulder/step.
 - Use kind arc when the arc chord/span is itself figured. direction describes chord travel (left/right/up/down), chord_dimension_id links the confirmed chord/span, bulge_side is left or right relative to chord travel, and arc_extent is minor, major or semicircle. Link either a figured radius or a figured rise/sagitta; link both when both are shown so deterministic code can check consistency.
 - Use kind connect_arc when the arc closes the perimeter and its two endpoints are already fixed by the preceding confirmed segments. This supports a sloping chord between unequal shoulder heights. A connect_arc requires either a figured radius or a figured rise/sagitta. Use exactly one calculated closing segment in a path: connect or connect_arc.
 - Compound circular curves are allowed as multiple arc segments, provided every radius and every required chord/span is explicitly figured or the endpoints are deterministically fixed by closure.
@@ -62,6 +65,58 @@ profile.properties.corner_radii = {
 if (!profile.required.includes('corner_radii')) profile.required.push('corner_radii');
 
 function normalise(value){return String(value||'').trim().toLowerCase().replace(/[_-]+/g,' ').replace(/\s+/g,' ');}
+
+function boundaryLinkScore(segment, dimension){
+  const segmentText=normalise(`${segment?.id||''} ${segment?.label||''}`);
+  const targetText=normalise(`${dimension?.target||''}`);
+  if(!targetText)return -100;
+  let score=0;
+  const exactTarget=String(dimension?.target||'').match(/profile\.(?:boundary|segments?)\.([^.]+)(?:\.(?:length|radius|chord|rise|sagitta))?$/i);
+  if(exactTarget&&normalise(exactTarget[1])===normalise(segment?.id))score+=30;
+  for(const side of ['left','right','top','bottom']){
+    const inSegment=new RegExp(`\\b${side}\\b`).test(segmentText),inTarget=new RegExp(`\\b${side}\\b`).test(targetText);
+    if(inSegment&&inTarget)score+=6; else if(inSegment&&new RegExp(`\\b${side==='left'?'right':side==='right'?'left':side==='top'?'bottom':'top'}\\b`).test(targetText))score-=10;
+  }
+  for(const word of ['shoulder','ledge','recess','step','drop','rise','side','bottom','arc']){
+    const token=new RegExp(`\\b${word}\\b`);if(token.test(segmentText)&&token.test(targetText))score+=4;
+  }
+  if(segment?.kind==='vertical'&&/\b(vertical|height|rise|drop)\b/.test(targetText))score+=4;
+  if(segment?.kind==='horizontal'&&/\b(horizontal|width|ledge|shoulder|bottom)\b/.test(targetText))score+=4;
+  if(['horizontal','vertical'].includes(segment?.kind)&&/\b(radius|rad|arc)\b/.test(targetText))score-=12;
+  if(dimension?.role==='radius'&&['horizontal','vertical'].includes(segment?.kind))score-=20;
+  return score;
+}
+
+function repairCurvedBoundaryLinks(extraction){
+  const dimensions=Array.isArray(extraction?.dimensions)?extraction.dimensions:[];
+  if(!dimensions.length)return extraction;
+  const overallValues=dimensions.filter((d)=>d?.role==='overall'&&Number(d.value)>0).map((d)=>Number(d.value));
+  const largestOverall=overallValues.length?Math.max(...overallValues):null;
+  for(const part of extraction?.parts||[]){
+    if(part?.profile?.type!=='path')continue;
+    const segments=part.profile.boundary_segments||[],claimed=new Set();
+    for(const segment of segments){
+      if(!['horizontal','vertical'].includes(segment?.kind))continue;
+      const current=dimensions.find((d)=>d.id===segment.dimension_id);
+      const shoulderLike=/\b(shoulder|ledge|recess|step|drop|rise)\b/i.test(segment.label||'');
+      const impossible=current&&(current.role==='radius'||(shoulderLike&&largestOverall&&Number(current.value)>=largestOverall));
+      const currentScore=current?boundaryLinkScore(segment,current):-100;
+      if(current&&!impossible&&currentScore>=6&&!claimed.has(current.id)){claimed.add(current.id);continue;}
+      segment.dimension_id=null;segment.length_mm=null;
+    }
+    for(const segment of segments){
+      if(!['horizontal','vertical'].includes(segment?.kind)||segment.dimension_id)continue;
+      const shoulderLike=/\b(shoulder|ledge|recess|step|drop|rise)\b/i.test(segment.label||'');
+      const ranked=dimensions.filter((d)=>Number(d.value)>0&&!claimed.has(d.id)&&d.role!=='radius')
+        .filter((d)=>!(shoulderLike&&largestOverall&&Number(d.value)>=largestOverall))
+        .map((d)=>({d,score:boundaryLinkScore(segment,d)})).filter((item)=>item.score>=6)
+        .sort((a,b)=>b.score-a.score);
+      if(!ranked.length||(ranked[1]&&ranked[1].score===ranked[0].score))continue;
+      segment.dimension_id=ranked[0].d.id;segment.length_mm=Number(ranked[0].d.value);claimed.add(ranked[0].d.id);
+    }
+  }
+  return extraction;
+}
 function partForTarget(parts, lowerTarget){
   for(let index=0;index<parts.length;index++){
     const part=parts[index],names=[String(part?.id||''),`p${index+1}`].filter(Boolean);
@@ -104,6 +159,7 @@ export function linkExplicitDimensionTargets(extraction){
 
 export function enforceAnalysisChecks(extraction){
   if(!extraction||typeof extraction!=='object')return extraction;
+  repairCurvedBoundaryLinks(extraction);
   for(const part of extraction.parts||[]){
     const segments=part?.profile?.boundary_segments||[];
     const vector=(direction)=>direction==='right'?[1,0]:direction==='left'?[-1,0]:direction==='up'?[0,1]:direction==='down'?[0,-1]:null;

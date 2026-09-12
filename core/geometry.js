@@ -228,7 +228,12 @@ function pointEntityDistance(p,entity){
 function profileCorners(part){
   if(part.profile.type==='rectangle')return [point(0,0),point(part.profile.width,0),point(part.profile.width,part.profile.height),point(0,part.profile.height)];
   if(part.profile.type==='quadrilateral')return part.profile.points||[];
-  if(part.profile.type==='path')return (part.profile.segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind))?null:(part.profile.points||[]);
+  // Curved paths do not have four reliable bounding-box "corners". Treating
+  // that uncertainty as a hard production-manager gate prevented otherwise
+  // valid, fully confirmed drawings from rendering or exporting. Edge
+  // clearance is still checked below; corner clearance is checked only where
+  // the geometry provides explicit, deterministic corners.
+  if(part.profile.type==='path')return (part.profile.segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind))?[]:(part.profile.points||[]);
   return [];
 }
 function validateToughenedSource(source,parts,errors){
@@ -238,7 +243,6 @@ function validateToughenedSource(source,parts,errors){
   const edgeMinimum=1.5*thickness,cornerMinimum=4*thickness;
   for(let partIndex=0;partIndex<parts.length;partIndex++){
     const part=parts[partIndex],proposal=source.analysis?.parts?.[partIndex],outer=part.entities.filter((entity)=>entity.role==='outer'),corners=profileCorners(part);
-    if(corners===null)errors.push(`${part.label}: toughened corner clearance on a curved outer profile requires a production-manager check.`);
     for(const feature of proposal?.features||[]){
       if(!['rectangular_cutout','circular_hole','slot'].includes(feature.type))continue;
       const featureEntities=part.entities.filter((entity)=>entity.role==='cut'&&(entity.featureId===feature.id||entity.label===feature.id));

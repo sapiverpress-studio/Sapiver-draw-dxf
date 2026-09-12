@@ -14,6 +14,7 @@ import {
   reviewStats,
   unlinkedDimensions,
   unlinkDimension,
+  materialiseDerivedDimensions,
   reviewDrawingSvg,
 } from './core/review-model.js';
 
@@ -652,6 +653,7 @@ function applyAnalysisResult(source, result) {
   }
   source.analysis = extraction;
   source.dimensions = Array.isArray(extraction.dimensions) ? extraction.dimensions.map(mapDimension) : [];
+  materialiseDerivedDimensions(source);
   source.analysisStatus = source.dimensions.length ? 'review' : 'needs-review';
   source.analysisResponseId = null;
   source.analysisStartedAt = null;
@@ -948,7 +950,11 @@ function makeSlotCard(source, slot) {
   card.appendChild(actions);
 
   const meta = document.createElement('small'); meta.className = 'dimension-meta';
-  meta.textContent = d.confidence === 'manual' ? 'Manually added' : `AI read: ${d.rawText || d.valueMm || '—'} · confidence ${d.confidence || 'unknown'}`;
+  meta.textContent = d.confidence === 'manual'
+    ? 'Manually added'
+    : d.confidence === 'derived'
+      ? 'Calculated from analysed geometry · confirm against the source'
+      : `AI read: ${d.rawText || d.valueMm || '—'} · confidence ${d.confidence || 'unknown'}`;
   card.appendChild(meta);
 
   function updateFromInputs() {

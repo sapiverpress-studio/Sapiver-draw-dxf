@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { fileKey, json, safeFileId, safeId, store } from './_quick-dxf-store.mjs';
 import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA, enforceAnalysisChecks, linkExplicitDimensionTargets } from './_quick-dxf-analysis.mjs';
+import { OBSERVATION_MODEL, OBSERVATION_PROMPT, OBSERVATION_SCHEMA, geometryPrompt } from './_quick-dxf-observation.mjs';
 import { keyShape, normaliseApiKey, probeOpenAIAuth } from '../lib/openai-auth.mjs';
 import { requireAuth } from '../lib/access-auth.mjs';
 
@@ -30,6 +31,44 @@ function publicOpenAIError(error) {
   return `${prefix}${meta ? ` (${meta})` : ''}: ${message}`;
 }
 
+const usageNumber = (usage, field) => Number(usage?.[field] || 0);
+function usageMeta(usage) {
+  return {
+    observation_input_tokens: String(usageNumber(usage, 'input_tokens')),
+    observation_output_tokens: String(usageNumber(usage, 'output_tokens')),
+  };
+}
+function combinedUsage(response) {
+  const observationInput = Number(response?.metadata?.observation_input_tokens || 0);
+  const observationOutput = Number(response?.metadata?.observation_output_tokens || 0);
+  const mappingInput = usageNumber(response?.usage, 'input_tokens');
+  const mappingOutput = usageNumber(response?.usage, 'output_tokens');
+  return {
+    observation: { input_tokens: observationInput, output_tokens: observationOutput },
+    mapping: { input_tokens: mappingInput, output_tokens: mappingOutput },
+    total: { input_tokens: observationInput + mappingInput, output_tokens: observationOutput + mappingOutput },
+  };
+}
+
+async function startGeometryResponse(openai, observationResponse) {
+  let observations;
+  try { observations = JSON.parse(observationResponse.output_text); }
+  catch { return json({ error: 'AI observation pass completed but returned invalid structured data.' }, 502); }
+  const response = await openai.responses.create({
+    model: MODEL,
+    reasoning: { effort: 'medium' },
+    background: true,
+    store: true,
+    previous_response_id: observationResponse.id,
+    metadata: { quick_dxf_stage: 'geometry', ...usageMeta(observationResponse.usage) },
+    input: [{ role: 'user', content: [{ type: 'input_text', text: `${ANALYSIS_PROMPT}\n\n${geometryPrompt(observations)}` }] }],
+    text: { format: { type: 'json_schema', name: 'quick_dxf_extraction', description: 'Reconciled fabrication geometry for mandatory human review.', strict: true, schema: ANALYSIS_SCHEMA } },
+  });
+  if (response.status === 'completed') return completedResponse(response);
+  if (!PENDING_STATUSES.has(response.status)) return terminalError(response);
+  return json({ ok: true, pending: true, status: response.status, stage: 'geometry', model: MODEL, responseId: response.id }, 202);
+}
+
 function completedResponse(response) {
   let extraction;
   try { extraction = enforceAnalysisChecks(linkExplicitDimensionTargets(JSON.parse(response.output_text))); }
@@ -41,7 +80,7 @@ function completedResponse(response) {
     status: response.status,
     model: MODEL,
     responseId: response.id,
-    usage: response.usage || null,
+    usage: combinedUsage(response),
     extraction,
   });
 }
@@ -124,7 +163,10 @@ export default async (request) => {
           responseId: response.id,
         }, 202);
       }
-      if (response.status === 'completed') return completedResponse(response);
+      if (response.status === 'completed') {
+        if (response?.metadata?.quick_dxf_stage === 'observation') return startGeometryResponse(openai, response);
+        return completedResponse(response);
+      }
       return terminalError(response);
     } catch (error) {
       return authFailure(error, rawApiKey, apiKey);
@@ -172,14 +214,15 @@ export default async (request) => {
     }
 
     const response = await openai.responses.create({
-      model: MODEL,
-      reasoning: { effort: 'medium' },
+      model: OBSERVATION_MODEL,
+      reasoning: { effort: 'low' },
       background: true,
       store: true,
+      metadata: { quick_dxf_stage: 'observation' },
       input: [{
         role: 'user',
         content: [
-          { type: 'input_text', text: ANALYSIS_PROMPT },
+          { type: 'input_text', text: OBSERVATION_PROMPT },
           { type: 'input_text', text: toughened ? `Manufacturing context supplied by the operator: this drawing will be toughened; confirmed glass thickness is ${glassThicknessMm} mm. Extract geometry normally. Do not infer missing dimensions from these settings.` : 'Manufacturing context supplied by the operator: toughened-glass checks are not selected for this drawing. Extract geometry normally.' },
           sourcePart,
         ],
@@ -187,22 +230,23 @@ export default async (request) => {
       text: {
         format: {
           type: 'json_schema',
-          name: 'quick_dxf_extraction',
-          description: 'Structured proposal of simple fabrication geometry and figured dimensions for mandatory human review.',
+          name: 'quick_dxf_observations',
+          description: 'Evidence register transcribed from a fabrication drawing before geometry construction.',
           strict: true,
-          schema: ANALYSIS_SCHEMA,
+          schema: OBSERVATION_SCHEMA,
         },
       },
     });
 
-    if (response.status === 'completed') return completedResponse(response);
+    if (response.status === 'completed') return startGeometryResponse(openai, response);
     if (!PENDING_STATUSES.has(response.status)) return terminalError(response);
 
     return json({
       ok: true,
       pending: true,
       status: response.status,
-      model: MODEL,
+      stage: 'observation',
+      model: OBSERVATION_MODEL,
       responseId: response.id,
     }, 202);
   } catch (error) {

@@ -1,5 +1,13 @@
 import assert from 'node:assert/strict';
 import { ANALYSIS_PROMPT, ANALYSIS_SCHEMA, enforceAnalysisChecks, linkExplicitDimensionTargets } from '../netlify/functions/_quick-dxf-analysis.mjs';
+import { OBSERVATION_PROMPT, OBSERVATION_SCHEMA, geometryPrompt } from '../netlify/functions/_quick-dxf-observation.mjs';
+
+assert.match(OBSERVATION_PROMPT, /transcription task only/i);
+assert.match(OBSERVATION_PROMPT, /every internal hole, slot or cut-out/i);
+assert.ok(OBSERVATION_SCHEMA.required.includes('features'));
+assert.ok(OBSERVATION_SCHEMA.required.includes('dimensions'));
+assert.match(geometryPrompt({ features: [] }), /Match every visible feature to exactly one feature object/i);
+assert.match(geometryPrompt({ features: [] }), /Do not reuse a position dimension for a different feature/i);
 
 const requiredInstructions = [
   'trace the complete visible outer perimeter',

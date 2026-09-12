@@ -44,7 +44,10 @@ if (list && progress) {
       );
     }
 
-    featureGroups.forEach((group) => { group.hidden = !perimeterComplete; });
+    // Keep detected features visible throughout review. Release remains guarded
+    // by confirmation state, but hiding evidence made successful detections look
+    // like analyser failures and prevented operators spotting association errors.
+    featureGroups.forEach((group) => { group.hidden = false; });
 
     if (featureGroups.length) {
       const featureCards = featureGroups.flatMap((group) => [...group.querySelectorAll('.feature-dimension')]);
@@ -54,12 +57,12 @@ if (list && progress) {
       const header = makeHeader(
         'features',
         '2 · Add cut-outs / holes',
-        perimeterComplete ? `${featureConfirmed}/${featureTotal} feature measurements confirmed` : 'Confirm the perimeter first; cut-outs unlock next',
+        `${featureConfirmed}/${featureTotal} feature measurements confirmed${perimeterComplete ? '' : ' · finish perimeter confirmation before release'}`,
         perimeterComplete && featureComplete,
       );
       const anchor = featureGroups[0];
       list.insertBefore(header, anchor);
-      header.classList.toggle('locked-stage', !perimeterComplete);
+      header.classList.toggle('locked-stage', false);
     }
 
     const totalCards = groups.flatMap((group) => [...group.querySelectorAll('.feature-dimension')]);

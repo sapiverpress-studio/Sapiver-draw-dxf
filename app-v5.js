@@ -665,7 +665,7 @@ function applyAnalysisResult(source, result) {
 function wait(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
 
 async function pollAnalysis(source) {
-  const responseId = source?.analysisResponseId;
+  let responseId = source?.analysisResponseId;
   if (!responseId || activeAnalysisPolls.has(responseId) || isFrozen()) return;
   activeAnalysisPolls.add(responseId);
   let transientFailures = 0;
@@ -686,6 +686,14 @@ async function pollAnalysis(source) {
       }
       if (source.analysisResponseId !== responseId) return;
       if (result.pending) {
+        if (result.responseId && result.responseId !== responseId) {
+          activeAnalysisPolls.delete(responseId);
+          responseId = result.responseId;
+          source.analysisResponseId = responseId;
+          source.analysisModel = result.model || source.analysisModel;
+          activeAnalysisPolls.add(responseId);
+          await saveJob({ immediate: true });
+        }
         source.analysisStatus = 'analysing';
         if (activeSource()?.id === source.id) render();
         continue;

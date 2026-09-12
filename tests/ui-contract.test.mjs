@@ -40,6 +40,9 @@ assert.match(geometry, /4\s*\*\s*thickness/, 'toughened corner-clearance rule mu
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
 assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(app, /dataset\.reviewGroup = slots\.every\(isPerimeterSlot\)/, 'review groups must classify profile and path-segment slots as perimeter controls');
+const reviewStages = fs.readFileSync(new URL('../review-stages.js', import.meta.url), 'utf8');
+assert.doesNotMatch(reviewStages, /group\.hidden\s*=\s*!perimeterComplete/, 'detected features must remain visible before perimeter confirmation');
+assert.match(app, /result\.responseId && result\.responseId !== responseId/, 'polling must follow the response ID when analysis advances to its geometry stage');
 assert.match(html, /id="geometryPreview" class="geometry-svg-preview"/, 'generated drawing must have an inline SVG host');
 assert.match(html, /geometry-preview\.css/, 'inline geometry preview styles must be loaded');
 assert.match(geometryPreviewCss, /geometry-svg-preview svg/, 'inline geometry SVG must have responsive sizing');

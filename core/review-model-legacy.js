@@ -304,7 +304,12 @@ export function repairGeometryLinks(source) {
       }
     }
 
-    if (current && !claimed.has(current.id)) {
+    if (current && claimed.has(current.id) && slot.kind === 'position') {
+      // A position describes one feature axis only. Sharing it makes editing
+      // one hole/cut-out silently move another. Repeated/TYP size callouts may
+      // be shared intentionally, but feature positions may not.
+      owner[slot.field] = null;
+    } else if (current && !claimed.has(current.id)) {
       claimed.add(current.id);
       applySlotSemantics(source, slot, current);
     } else if (!current) {

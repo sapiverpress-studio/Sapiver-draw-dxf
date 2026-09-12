@@ -1,5 +1,5 @@
 import * as legacy from './geometry-legacy.js';
-import { buildCurvedPath, buildRoundedRectangle, entitySamplePoints } from './curves.js';
+import { arcFromChord, buildCurvedPath, buildRoundedRectangle, entitySamplePoints, lineEntity, translateEntity } from './curves.js';
 
 const EPS = 1e-6;
 
@@ -10,7 +10,11 @@ function hasCurvePart(part) {
   return (profile.type==='rectangle' && Array.isArray(profile.corner_radii) && profile.corner_radii.length>0)
     || (profile.type==='path' && (profile.boundary_segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind)));
 }
-function hasCurveGeometry(source) { return (source?.analysis?.parts||[]).some(hasCurvePart); }
+function hasRadiusedFeature(part) {
+  return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));
+}
+function hasRadiusedBoundaryFeature(part){return (part?.features||[]).some((feature)=>['corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));}
+function hasCurveGeometry(source) { return (source?.analysis?.parts||[]).some((part)=>hasCurvePart(part)||hasRadiusedFeature(part)); }
 
 function resolveDimension(dimensionMap,id,label,errors,{position=false}={}) {
   if(!id){ errors.push(`${label}: AI did not link a figured dimension to this geometry parameter.`); return null; }
@@ -67,10 +71,86 @@ function boundsFromPoints(points){
 function entityBounds(entity){ return boundsFromPoints(entitySamples(entity)); }
 function checkInside(points,entity,label,errors){ if(entitySamples(entity).some((p)=>!pointInPolygon(p,points))) errors.push(`${label}: confirmed feature extends outside the curved panel boundary.`); }
 
+function confirmedNotchRadius(feature,dimensionMap,label,errors){
+  const rd=resolveDimension(dimensionMap,feature.radius_dimension_id,`${label} / ${feature.id} internal radius`,errors); if(!rd)return null;
+  const radius=Number(rd.valueMm),finish=String(feature.cutout_finish||'unknown').toLowerCase();
+  if(!feature.cutout_finish_confirmed||!['polished','unpolished'].includes(finish)){errors.push(`${label} / ${feature.id}: confirm whether the radiused notch is polished/CNC or unpolished.`);return null;}
+  const minimum=finish==='polished'?15:6;
+  if(radius<minimum-EPS){errors.push(`${label} / ${feature.id}: confirmed internal radius R${radius} is below Halifax Glass's ${minimum} mm minimum for a ${finish==='polished'?'polished/CNC':'unpolished'} notch.`);return null;}
+  return radius;
+}
+
+function nearestVertex(points,target,used,tolerance=0.02){
+  let best=-1,distance=Infinity;
+  points.forEach((p,index)=>{const d=Math.hypot(p.x-target.x,p.y-target.y);if(!used.has(index)&&d<distance){best=index;distance=d;}});
+  return distance<=tolerance?best:-1;
+}
+
+function filletPolyline(points,radii,label,errors){
+  const count=points.length,entry=[],exit=[];
+  for(let i=0;i<count;i++){
+    const v=points[i],prev=points[(i+count-1)%count],next=points[(i+1)%count],radius=Number(radii.get(i)||0);
+    if(!radius){entry[i]=v;exit[i]=v;continue;}
+    const lp=Math.hypot(prev.x-v.x,prev.y-v.y),ln=Math.hypot(next.x-v.x,next.y-v.y);
+    if(radius>=lp-EPS||radius>=ln-EPS){errors.push(`${label}: radius R${radius} does not fit the adjacent notch legs.`);return null;}
+    entry[i]=point(v.x+(prev.x-v.x)/lp*radius,v.y+(prev.y-v.y)/lp*radius);
+    exit[i]=point(v.x+(next.x-v.x)/ln*radius,v.y+(next.y-v.y)/ln*radius);
+  }
+  const entities=[],sample=[];
+  for(let i=0;i<count;i++){
+    const next=(i+1)%count;
+    const edgeX=points[next].x-points[i].x,edgeY=points[next].y-points[i].y;
+    const remainingX=entry[next].x-exit[i].x,remainingY=entry[next].y-exit[i].y;
+    if(edgeX*remainingX+edgeY*remainingY<-EPS){errors.push(`${label}: adjacent notch radii overlap the available straight edge.`);return null;}
+    if(Math.hypot(exit[i].x-entry[next].x,exit[i].y-entry[next].y)>EPS){const line=lineEntity(exit[i],entry[next],{role:'outer',label});entities.push(line);sample.push(...line.points);}
+    const radius=Number(radii.get(next)||0); if(!radius)continue;
+    const v=points[next],centre=point(entry[next].x+exit[next].x-v.x,entry[next].y+exit[next].y-v.y);
+    const candidates=['left','right'].map((bulgeSide)=>arcFromChord(entry[next],exit[next],radius,{bulgeSide,extent:'minor',role:'outer',label:`${label} R${radius}`}));
+    const arc=candidates.sort((a,b)=>Math.hypot(a.cx-centre.x,a.cy-centre.y)-Math.hypot(b.cx-centre.x,b.cy-centre.y))[0];
+    entities.push(arc);sample.push(...entitySamplePoints(arc));
+  }
+  return {entities,points:sample};
+}
+
+function compileRadiusedBoundaryPart(part,source,dimensionMap,errors){
+  const label=part.label||part.id||'Part',profile=part.profile||{};
+  const errorCount=errors.length;
+  if(profile.type!=='rectangle'){errors.push(`${label}: radiused boundary notches on ${profile.type||'unknown'} profiles are not yet supported deterministically.`);return null;}
+  const stripped=structuredClone(part);
+  for(const feature of stripped.features||[])if(['corner_notch','edge_notch'].includes(feature.type)){feature.radius_mm=null;feature.radius_dimension_id=null;}
+  const sharp=legacy.compileSourceGeometry({...source,analysis:{...(source.analysis||{}),parts:[stripped]}});
+  if(!sharp.ok){errors.push(...sharp.errors);return null;}
+  const compiled=sharp.parts[0],outer=compiled.entities.find((entity)=>entity.role==='outer'&&entity.type==='polyline');
+  if(!outer){errors.push(`${label}: could not construct the sharp notch boundary before applying radii.`);return null;}
+  const width=compiled.profile.width,height=compiled.profile.height,radii=new Map(),used=new Set();
+  for(const feature of part.features||[]){
+    if(!['corner_notch','edge_notch'].includes(feature.type)||!(feature.radius_dimension_id||finitePositive(feature.radius_mm)))continue;
+    const radius=confirmedNotchRadius(feature,dimensionMap,label,errors);if(!radius)continue;
+    const wd=resolveDimension(dimensionMap,feature.width_dimension_id,`${label} / ${feature.id} width`,errors),dd=resolveDimension(dimensionMap,feature.depth_dimension_id,`${label} / ${feature.id} depth`,errors);if(!wd||!dd)continue;
+    const w=Number(wd.valueMm),d=Number(dd.valueMm),targets=[];
+    if(feature.type==='corner_notch'){
+      const target={'bottom-left':point(w,d),'bottom-right':point(width-w,d),'top-right':point(width-w,height-d),'top-left':point(w,height-d)}[feature.corner];
+      if(target)targets.push(target);
+    }else{
+      const od=resolveDimension(dimensionMap,feature.offset_dimension_id,`${label} / ${feature.id} position`,errors);if(!od)continue;const o=Number(od.valueMm);
+      if(feature.touching_edge==='bottom')targets.push(point(o,d),point(o+w,d));
+      if(feature.touching_edge==='top')targets.push(point(o,height-d),point(o+w,height-d));
+      if(feature.touching_edge==='left')targets.push(point(d,o),point(d,o+w));
+      if(feature.touching_edge==='right')targets.push(point(width-d,o),point(width-d,o+w));
+    }
+    for(const target of targets){const index=nearestVertex(outer.points,target,used);if(index<0)errors.push(`${label} / ${feature.id}: could not match the confirmed notch radius to its internal corner.`);else{radii.set(index,radius);used.add(index);}}
+  }
+  if(errors.length>errorCount)return null;
+  const rounded=filletPolyline(outer.points,radii,label,errors);if(!rounded)return null;
+  compiled.entities=[...rounded.entities,...compiled.entities.filter((entity)=>entity!==outer)];
+  compiled.profile={...compiled.profile,points:rounded.points};
+  return compiled;
+}
+
 function compileFeature(feature,profile,dimensionMap,compiledFeatures,label,errors){
   const prefix=`${label} / ${feature.id||feature.type}`;
   if(!['rectangular_cutout','circular_hole','slot'].includes(feature.type)){ errors.push(`${prefix}: ${feature.type} is not supported on a curved deterministic profile.`); return null; }
-  let width,height,diameter=null;
+  let width,height,diameter=null,radius=0;
   if(feature.type==='circular_hole'){
     const d=resolveDimension(dimensionMap,feature.diameter_dimension_id,`${prefix} diameter`,errors); if(!d)return null;
     diameter=Number(d.valueMm); width=diameter; height=diameter;
@@ -78,6 +158,15 @@ function compileFeature(feature,profile,dimensionMap,compiledFeatures,label,erro
     const wd=resolveDimension(dimensionMap,feature.width_dimension_id,`${prefix} width`,errors);
     const hd=resolveDimension(dimensionMap,feature.height_dimension_id,`${prefix} height`,errors); if(!wd||!hd)return null;
     width=Number(wd.valueMm); height=Number(hd.valueMm);
+    if(feature.radius_dimension_id||finitePositive(feature.radius_mm)){
+      const rd=resolveDimension(dimensionMap,feature.radius_dimension_id,`${prefix} internal radius`,errors); if(!rd)return null;
+      radius=Number(rd.valueMm);
+      const finish=String(feature.cutout_finish||'unknown').toLowerCase();
+      if(!feature.cutout_finish_confirmed||!['polished','unpolished'].includes(finish)){errors.push(`${prefix}: confirm whether the radiused cut-out is polished/CNC or unpolished.`);return null;}
+      const minimum=finish==='polished'?15:6;
+      if(radius<minimum-EPS){errors.push(`${prefix}: confirmed internal radius R${radius} is below Halifax Glass's ${minimum} mm minimum for a ${finish==='polished'?'polished/CNC':'unpolished'} cut-out.`);return null;}
+      if(radius>Math.min(width,height)/2+EPS){errors.push(`${prefix}: confirmed internal radius R${radius} cannot fit inside a ${width} x ${height} mm cut-out.`);return null;}
+    }
   }
   const xd=resolveDimension(dimensionMap,feature.x_dimension_id,`${prefix} X position`,errors,{position:true});
   const yd=resolveDimension(dimensionMap,feature.y_dimension_id,`${prefix} Y position`,errors,{position:true}); if(!xd||!yd)return null;
@@ -88,12 +177,87 @@ function compileFeature(feature,profile,dimensionMap,compiledFeatures,label,erro
     cx=entityBounds(previous).maxX+Number(xd.valueMm)+width/2;
   } else cx=axisCentre(totalWidth,width,xd,'x',`${prefix} X position`,errors);
   const cy=axisCentre(totalHeight,height,yd,'y',`${prefix} Y position`,errors); if(cx==null||cy==null)return null;
-  let entity;
-  if(feature.type==='circular_hole') entity={type:'circle',cx,cy,r:diameter/2,role:'cut',label:feature.id||'Hole'};
-  else if(feature.type==='rectangular_cutout') entity={type:'polyline',points:rectanglePoints(cx-width/2,cy-height/2,width,height),closed:true,role:'cut',label:feature.id||'Cut-out'};
-  else entity={type:'polyline',points:capsulePoints(cx,cy,width,height),closed:true,role:'cut',label:feature.id||'Slot'};
-  checkInside(profile.points,entity,prefix,errors);
-  return entity;
+  let entities,sampleEntity;
+  if(feature.type==='circular_hole'){
+    sampleEntity={type:'circle',cx,cy,r:diameter/2,role:'cut',label:feature.id||'Hole'}; entities=[sampleEntity];
+  } else if(feature.type==='rectangular_cutout'&&radius>0){
+    try{
+      const rounded=buildRoundedRectangle(width,height,{
+        'bottom-left':radius,'bottom-right':radius,'top-right':radius,'top-left':radius,
+      },{label:feature.id||'Cut-out',role:'cut'});
+      entities=rounded.entities.map((entity)=>({...translateEntity(entity,cx-width/2,cy-height/2),featureId:feature.id}));
+      sampleEntity={type:'polyline',points:rounded.points.map((p)=>point(p.x+cx-width/2,p.y+cy-height/2)),closed:true,role:'cut',label:feature.id||'Cut-out'};
+    }catch(error){errors.push(`${prefix}: ${error.message}`);return null;}
+  } else if(feature.type==='rectangular_cutout'){
+    sampleEntity={type:'polyline',points:rectanglePoints(cx-width/2,cy-height/2,width,height),closed:true,role:'cut',label:feature.id||'Cut-out'}; entities=[sampleEntity];
+  } else {
+    sampleEntity={type:'polyline',points:capsulePoints(cx,cy,width,height),closed:true,role:'cut',label:feature.id||'Slot'}; entities=[sampleEntity];
+  }
+  checkInside(profile.points,sampleEntity,prefix,errors);
+  entities=entities.map((entity)=>({...entity,featureId:feature.id||null}));
+  return {entities,sampleEntity};
+}
+
+function pointSegmentDistance(p,a,b){
+  const dx=b.x-a.x,dy=b.y-a.y,length2=dx*dx+dy*dy;if(length2<=EPS)return Math.hypot(p.x-a.x,p.y-a.y);
+  const t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/length2));return Math.hypot(p.x-(a.x+t*dx),p.y-(a.y+t*dy));
+}
+function orientation(a,b,c){return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);}
+function segmentsIntersect(a,b,c,d){
+  const o1=orientation(a,b,c),o2=orientation(a,b,d),o3=orientation(c,d,a),o4=orientation(c,d,b);
+  return ((o1>EPS&&o2<-EPS)||(o1<-EPS&&o2>EPS))&&((o3>EPS&&o4<-EPS)||(o3<-EPS&&o4>EPS));
+}
+function segmentDistance(a,b,c,d){return segmentsIntersect(a,b,c,d)?0:Math.min(pointSegmentDistance(a,c,d),pointSegmentDistance(b,c,d),pointSegmentDistance(c,a,b),pointSegmentDistance(d,a,b));}
+function entitySegments(entity){
+  if(entity.type!=='polyline')return[];const result=[];
+  for(let i=0;i<entity.points.length-1;i++)result.push([entity.points[i],entity.points[i+1]]);
+  if(entity.closed!==false&&entity.points.length>2)result.push([entity.points.at(-1),entity.points[0]]);
+  return result;
+}
+function radialEntity(entity){return ['circle','arc'].includes(entity.type);}
+function entityDistance(a,b){
+  if(radialEntity(a)&&radialEntity(b))return Math.max(0,Math.hypot(a.cx-b.cx,a.cy-b.cy)-a.r-b.r);
+  if(radialEntity(a)&&b.type==='polyline')return Math.max(0,Math.min(...entitySegments(b).map(([p,q])=>pointSegmentDistance(point(a.cx,a.cy),p,q)))-a.r);
+  if(a.type==='polyline'&&radialEntity(b))return entityDistance(b,a);
+  return Math.min(...entitySegments(a).flatMap(([p,q])=>entitySegments(b).map(([r,s])=>segmentDistance(p,q,r,s))));
+}
+function pointEntityDistance(p,entity){
+  if(radialEntity(entity))return Math.max(0,Math.hypot(p.x-entity.cx,p.y-entity.cy)-entity.r);
+  return Math.min(...entitySegments(entity).map(([a,b])=>pointSegmentDistance(p,a,b)));
+}
+function profileCorners(part){
+  if(part.profile.type==='rectangle')return [point(0,0),point(part.profile.width,0),point(part.profile.width,part.profile.height),point(0,part.profile.height)];
+  if(part.profile.type==='quadrilateral')return part.profile.points||[];
+  if(part.profile.type==='path')return (part.profile.segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind))?null:(part.profile.points||[]);
+  return [];
+}
+function validateToughenedSource(source,parts,errors){
+  if(!source?.toughened)return;
+  const thickness=Number(source.glassThicknessMm);
+  if(!(thickness>0)){errors.push('Toughened glass: enter the confirmed glass thickness before DXF release.');return;}
+  const edgeMinimum=1.5*thickness,cornerMinimum=4*thickness;
+  for(let partIndex=0;partIndex<parts.length;partIndex++){
+    const part=parts[partIndex],proposal=source.analysis?.parts?.[partIndex],outer=part.entities.filter((entity)=>entity.role==='outer'),corners=profileCorners(part);
+    if(corners===null)errors.push(`${part.label}: toughened corner clearance on a curved outer profile requires a production-manager check.`);
+    for(const feature of proposal?.features||[]){
+      if(!['rectangular_cutout','circular_hole','slot'].includes(feature.type))continue;
+      const featureEntities=part.entities.filter((entity)=>entity.role==='cut'&&(entity.featureId===feature.id||entity.label===feature.id));
+      if(!featureEntities.length){errors.push(`${part.label} / ${feature.id}: toughened clearance could not be checked because its finished boundary was not identified.`);continue;}
+      const edgeDistance=Math.min(...featureEntities.flatMap((cut)=>outer.map((boundary)=>entityDistance(cut,boundary))));
+      if(edgeDistance<edgeMinimum-EPS)errors.push(`${part.label} / ${feature.id}: toughened clearance to the nearest glass edge is ${edgeDistance.toFixed(2)} mm; minimum is ${edgeMinimum.toFixed(2)} mm (1.5 × ${thickness} mm).`);
+      if(corners?.length){
+        const cornerDistance=Math.min(...corners.flatMap((corner)=>featureEntities.map((entity)=>pointEntityDistance(corner,entity))));
+        if(cornerDistance<cornerMinimum-EPS)errors.push(`${part.label} / ${feature.id}: toughened clearance to the nearest panel corner is ${cornerDistance.toFixed(2)} mm; minimum is ${cornerMinimum.toFixed(2)} mm (4 × ${thickness} mm).`);
+      }
+    }
+  }
+}
+function validateFeatureFinishes(source,errors){
+  if(!source?.manufacturingControlsV1)return;
+  for(const part of source.analysis?.parts||[])for(const feature of part.features||[]){
+    if(!['rectangular_cutout','slot','corner_notch','edge_notch'].includes(feature.type))continue;
+    if(!feature.cutout_finish_confirmed||!['polished','unpolished'].includes(feature.cutout_finish))errors.push(`${part.label||part.id||'Part'} / ${feature.id}: confirm whether the cut-out is polished or unpolished.`);
+  }
 }
 
 function compileCurvedPart(part,dimensionMap,errors){
@@ -107,7 +271,7 @@ function compileCurvedPart(part,dimensionMap,errors){
       const d=resolveDimension(dimensionMap,radiusSpec.radius_dimension_id,`${label} ${radiusSpec.corner} corner radius`,errors); if(!d)return null;
       radii[radiusSpec.corner]=Number(d.valueMm);
     }
-    if((part.features||[]).some((f)=>['corner_notch','edge_notch'].includes(f.type))){ errors.push(`${label}: rounded outer corners combined with boundary notches are not yet supported deterministically.`); return null; }
+    if((spec.corner_radii||[]).length&&(part.features||[]).some((f)=>['corner_notch','edge_notch'].includes(f.type))){ errors.push(`${label}: rounded outer corners combined with boundary notches are not yet supported deterministically.`); return null; }
     try{
       const rounded=buildRoundedRectangle(width,height,radii,{label});
       profile={type:'rectangle',width,height,points:rounded.points,cornerRadii:rounded.radii}; outerEntities=rounded.entities;
@@ -144,26 +308,35 @@ function compileCurvedPart(part,dimensionMap,errors){
     if(['corner_notch','edge_notch'].includes(feature.type)) continue;
     const quantity=Math.max(1,Number(feature.quantity)||1);
     if(quantity!==1){errors.push(`${label} / ${feature.id||feature.type}: repeated quantity ${quantity} needs individually located features before DXF release.`);continue;}
-    const entity=compileFeature(feature,profile,dimensionMap,compiledFeatures,label,errors);
-    if(entity){entities.push(entity);compiledFeatures.set(feature.id,entity);}
+    const compiled=compileFeature(feature,profile,dimensionMap,compiledFeatures,label,errors);
+    if(compiled){entities.push(...compiled.entities);compiledFeatures.set(feature.id,compiled.sampleEntity);}
   }
   const b=boundsFromPoints(profile.points),bounds={...b,width:b.maxX-b.minX,height:b.maxY-b.minY};
   return {id:part.id||label,label,profile,entities,bounds};
 }
 
 export function compileSourceGeometry(source){
-  if(!hasCurveGeometry(source)) return legacy.compileSourceGeometry(source);
+  if(!hasCurveGeometry(source)){
+    const result=legacy.compileSourceGeometry(source),errors=[...(result.errors||[])];
+    validateFeatureFinishes(source,errors);
+    validateToughenedSource(source,result.parts||[],errors);
+    return {...result,ok:errors.length===0&&(result.parts||[]).length>0,errors:[...new Set(errors)]};
+  }
   const errors=[];
   if(!source?.analysis) return {ok:false,errors:['No AI geometry proposal is available for this drawing.'],parts:[]};
   const dimensionMap=new Map((source.dimensions||[]).map((d)=>[d.id,d])),parts=[];
   for(const part of source.analysis.parts||[]){
-    if(hasCurvePart(part)){
+    if(hasRadiusedBoundaryFeature(part)){
+      const compiled=compileRadiusedBoundaryPart(part,source,dimensionMap,errors);if(compiled)parts.push(compiled);
+    } else if(hasCurvePart(part)||hasRadiusedFeature(part)){
       const compiled=compileCurvedPart(part,dimensionMap,errors); if(compiled)parts.push(compiled);
     } else {
       const result=legacy.compileSourceGeometry({...source,analysis:{...source.analysis,parts:[part]}});
       if(result.ok) parts.push(...result.parts); else errors.push(...result.errors);
     }
   }
+  validateFeatureFinishes(source,errors);
+  validateToughenedSource(source,parts,errors);
   return {ok:errors.length===0&&parts.length>0,errors:[...new Set(errors)],parts};
 }
 

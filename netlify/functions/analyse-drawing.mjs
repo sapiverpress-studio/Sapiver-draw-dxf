@@ -143,6 +143,9 @@ export default async (request) => {
   const metadata = await s.getMetadata(key).catch(() => null);
   const contentType = String(metadata?.metadata?.contentType || body?.contentType || 'application/octet-stream');
   const filename = String(metadata?.metadata?.filename || body?.filename || fileId);
+  const toughened = Boolean(body?.toughened);
+  const glassThicknessMm = Number(body?.glassThicknessMm);
+  if (toughened && !(glassThicknessMm > 0)) return json({ error: 'Glass thickness is required when toughened is selected.' }, 400);
   const bytes = await new Response(stream).arrayBuffer();
 
   let sourcePart;
@@ -177,6 +180,7 @@ export default async (request) => {
         role: 'user',
         content: [
           { type: 'input_text', text: ANALYSIS_PROMPT },
+          { type: 'input_text', text: toughened ? `Manufacturing context supplied by the operator: this drawing will be toughened; confirmed glass thickness is ${glassThicknessMm} mm. Extract geometry normally. Do not infer missing dimensions from these settings.` : 'Manufacturing context supplied by the operator: toughened-glass checks are not selected for this drawing. Extract geometry normally.' },
           sourcePart,
         ],
       }],

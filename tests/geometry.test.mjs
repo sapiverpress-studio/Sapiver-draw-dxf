@@ -68,4 +68,42 @@ const blockedUnsupported = compileSourceGeometry(unsupported);
 assert.equal(blockedUnsupported.ok, false);
 assert.ok(blockedUnsupported.errors.some((e) => e.includes('not yet supported')));
 
+const toughened = structuredClone(source);
+toughened.manufacturingControlsV1 = true;
+toughened.toughened = true;
+toughened.glassThicknessMm = 10;
+for (const feature of toughened.analysis.parts[0].features) {
+  if (['rectangular_cutout','slot'].includes(feature.type)) {
+    feature.cutout_finish = 'unpolished';
+    feature.cutout_finish_confirmed = true;
+  }
+}
+const safeToughened = compileSourceGeometry(toughened);
+assert.equal(safeToughened.ok, true, safeToughened.errors.join('\n'));
+
+const missingFinish = structuredClone(toughened);
+missingFinish.analysis.parts[0].features[0].cutout_finish_confirmed = false;
+const blockedMissingFinish = compileSourceGeometry(missingFinish);
+assert.equal(blockedMissingFinish.ok, false);
+assert.match(blockedMissingFinish.errors.join('\n'), /confirm whether the cut-out is polished or unpolished/i);
+
+const edgeUnsafe = structuredClone(toughened);
+edgeUnsafe.dimensions.find((d) => d.id === 'cut-x').valueMm = 10;
+const blockedEdgeClearance = compileSourceGeometry(edgeUnsafe);
+assert.equal(blockedEdgeClearance.ok, false);
+assert.match(blockedEdgeClearance.errors.join('\n'), /10\.00 mm; minimum is 15\.00 mm \(1\.5 × 10 mm\)/i);
+
+const cornerUnsafe = structuredClone(toughened);
+cornerUnsafe.dimensions.find((d) => d.id === 'cut-x').valueMm = 30;
+cornerUnsafe.dimensions.find((d) => d.id === 'cut-y').valueMm = 45;
+const blockedCornerClearance = compileSourceGeometry(cornerUnsafe);
+assert.equal(blockedCornerClearance.ok, false);
+assert.match(blockedCornerClearance.errors.join('\n'), /clearance to the nearest panel corner.*minimum is 40\.00 mm \(4 × 10 mm\)/i);
+
+const missingThickness = structuredClone(toughened);
+missingThickness.glassThicknessMm = null;
+const blockedMissingThickness = compileSourceGeometry(missingThickness);
+assert.equal(blockedMissingThickness.ok, false);
+assert.match(blockedMissingThickness.errors.join('\n'), /enter the confirmed glass thickness/i);
+
 console.log('Quick DXF deterministic geometry tests passed.');

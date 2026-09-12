@@ -29,6 +29,7 @@ const els = {
   activeSourceTitle: $('#activeSourceTitle'), activeSourceMeta: $('#activeSourceMeta'), drawingPreview: $('#drawingPreview'), drawingPlaceholder: $('#drawingPlaceholder'),
   geometryPreview: $('#geometryPreview'), geometryPlaceholder: $('#geometryPlaceholder'), geometryState: $('#geometryState'),
   aiState: $('#aiState'), analyseBtn: $('#analyseBtn'), dimensionList: $('#dimensionList'), dimensionEmpty: $('#dimensionEmpty'), reviewProgress: $('#reviewProgress'), addCorrectionBtn: $('#addCorrectionBtn'),
+  manufacturingSettings: $('#manufacturingSettings'), toughenedGlass: $('#toughenedGlass'), glassThickness: $('#glassThickness'), manufacturingSettingsMessage: $('#manufacturingSettingsMessage'), bulkFinishControls: $('#bulkFinishControls'), polishAllBtn: $('#polishAllBtn'), unpolishedAllBtn: $('#unpolishedAllBtn'),
   pdfBtn: $('#pdfBtn'), pdfState: $('#pdfState'), signedInput: $('#signedInput'), signedState: $('#signedState'), customerConfirmed: $('#customerConfirmed'),
   productionBtn: $('#productionBtn'), exportChoiceBtn: $('#exportChoiceBtn'), sendBtn: $('#sendBtn'), releaseMessage: $('#releaseMessage'), dxfState: $('#dxfState'), releaseDownloads: $('#releaseDownloads'),
   purgeJobBtn: $('#purgeJobBtn'), deleteCodeDialog: $('#deleteCodeDialog'), deleteCodeForm: $('#deleteCodeForm'), deleteCodeDisplay: $('#deleteCodeDisplay'), deleteKeypad: $('#deleteKeypad'), deleteCodeError: $('#deleteCodeError'),
@@ -99,7 +100,8 @@ function cleanOldManualBlanks(source) {
 }
 
 function normaliseSource(source) {
-  const next = { ...source, dimensions: Array.isArray(source?.dimensions) ? source.dimensions.map((d) => ({ ...d })) : [] };
+  const toughened = source?.toughened === true ? true : source?.toughened === false ? false : null;
+  const next = { ...source, manufacturingControlsV1:Boolean(source?.manufacturingControlsV1), toughened, glassThicknessMm: Number(source?.glassThicknessMm) > 0 ? Number(source.glassThicknessMm) : null, dimensions: Array.isArray(source?.dimensions) ? source.dimensions.map((d) => ({ ...d })) : [] };
   cleanOldManualBlanks(next);
   repairGeometryLinks(next);
   return next;
@@ -123,6 +125,8 @@ function serialisableState() {
       analysisStatus: s.analysisStatus, analysis: s.analysis || null,
       analysisResponseId: s.analysisResponseId || null, analysisStartedAt: s.analysisStartedAt || null,
       analysisModel: s.analysisModel || null, analysisUsage: s.analysisUsage || null,
+      toughened: s.toughened === true ? true : s.toughened === false ? false : null, glassThicknessMm: Number(s.glassThicknessMm) > 0 ? Number(s.glassThicknessMm) : null,
+      manufacturingControlsV1: Boolean(s.manufacturingControlsV1),
       dimensions: s.dimensions || [],
     })),
     confirmationPdf: state.confirmationPdf,
@@ -180,7 +184,16 @@ function sourceReady(source) {
   repairGeometryLinks(source);
   const stats = reviewStats(source);
   if (!stats.total || stats.confirmed !== stats.total) return false;
+  if (finishFeatures(source).some(({ feature }) => !feature.cutout_finish_confirmed || !['polished','unpolished'].includes(feature.cutout_finish))) return false;
   return productionGeometry(source).ok;
+}
+function finishFeatures(source) {
+  if(!source?.manufacturingControlsV1)return[];
+  const result=[];
+  for(const [partIndex,part] of (source?.analysis?.parts||[]).entries())for(const [featureIndex,feature] of (part.features||[]).entries()){
+    if(['rectangular_cutout','slot','corner_notch','edge_notch'].includes(feature.type))result.push({part,partIndex,feature,featureIndex});
+  }
+  return result;
 }
 function jobReady() { return state.sources.length > 0 && state.sources.every(sourceReady); }
 function canApprove() { return backendOnline && jobReady() && Boolean(state.confirmationPdf?.fileKey) && Boolean(state.signedProof?.fileKey) && els.customerConfirmed.checked; }
@@ -449,6 +462,7 @@ async function addSourceFile(file) {
     id: sourceId, name: file.name, kind: file.type === 'application/pdf' || ext === 'pdf' ? 'pdf' : 'image', contentType: file.type || 'application/octet-stream',
     fileId, fileKey: null, sourceRevision: state.revision, previewFileId: null, previewFileKey: null,
     previewUrl: sourceId, pageCount: null, analysisStatus: 'uploading', dimensions: [], analysis: null,
+    manufacturingControlsV1:true, toughened: null, glassThicknessMm: null,
     analysisResponseId: null, analysisStartedAt: null, analysisModel: null, analysisUsage: null,
   };
   if (file.type.startsWith('image/')) source.previewUrl = URL.createObjectURL(file);
@@ -476,7 +490,6 @@ async function addSourceFile(file) {
     source.analysisStatus = 'awaiting';
     await saveJob({ immediate: true });
     render();
-    await analyseSource(source);
   } catch (error) {
     source.analysisStatus = 'error';
     source.error = error.message;
@@ -611,7 +624,7 @@ async function createManualDrawing(event) {
   const sourceId = id();
   const source = {
     id: sourceId, name: `Manual rectangular panel ${state.sources.length + 1}`, kind: 'manual', contentType: 'application/x-quick-dxf-manual', fileId: null, fileKey: null, sourceRevision: state.revision, previewUrl: null, pageCount: null,
-    analysisStatus: 'review', dimensions, analysis: { dimensions: [], parts: [{ id: `panel-${sourceId}`, label: profileType === 'rectangle' ? 'Rectangular panel' : 'Out-of-square panel', profile, features, dimension_ids: dimensions.map((d) => d.id) }] },
+    analysisStatus: 'review', dimensions, manufacturingControlsV1:true, toughened:false, glassThicknessMm:null, analysis: { dimensions: [], parts: [{ id: `panel-${sourceId}`, label: profileType === 'rectangle' ? 'Rectangular panel' : 'Out-of-square panel', profile, features, dimension_ids: dimensions.map((d) => d.id) }] },
     analysisResponseId: null, analysisStartedAt: null, analysisModel: 'manual', analysisUsage: null,
   };
   state.sources.push(source); state.activeSourceId = source.id; invalidateApproval();
@@ -631,6 +644,12 @@ async function removeSource(sourceId) {
 
 function applyAnalysisResult(source, result) {
   const extraction = result.extraction || {};
+  for (const part of extraction.parts || []) {
+    for (const feature of part.features || []) {
+      feature.cutout_finish_confirmed = false;
+      if (!['polished','unpolished'].includes(feature.cutout_finish)) feature.cutout_finish = 'unknown';
+    }
+  }
   source.analysis = extraction;
   source.dimensions = Array.isArray(extraction.dimensions) ? extraction.dimensions.map(mapDimension) : [];
   source.analysisStatus = source.dimensions.length ? 'review' : 'needs-review';
@@ -694,13 +713,18 @@ function resumePendingAnalyses() {
 
 async function analyseSource(source = activeSource()) {
   if (!source || isFrozen() || !source.fileKey) return;
+  if (!manufacturingSettingsReady(source)) {
+    source.error = 'Enter the glass thickness and select whether the glass will be toughened before analysis.';
+    render();
+    return;
+  }
   source.analysisStatus = 'analysing'; source.error = null; source.analysis = null; source.dimensions = [];
   source.analysisResponseId = null; source.analysisStartedAt = new Date().toISOString();
   invalidateApproval(); render();
   try {
     const result = await apiJson(API.analyse, {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jobId: state.id, revision: state.revision, fileId: source.fileId, fileKey: source.fileKey, contentType: source.contentType, filename: source.name }),
+      body: JSON.stringify({ jobId: state.id, revision: state.revision, fileId: source.fileId, fileKey: source.fileKey, contentType: source.contentType, filename: source.name, toughened:Boolean(source.toughened), glassThicknessMm:source.glassThicknessMm }),
     });
     if (result.pending) {
       if (!result.responseId) throw new Error('AI analysis started without a response ID.');
@@ -790,6 +814,7 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
   target.innerHTML = '';
   const additional = document.createElement('option'); additional.value = 'additional'; additional.textContent = 'Additional reference dimension (does not affect DXF)'; target.appendChild(additional);
   for (const slot of slots) {
+    if (slot.kind === 'process') continue;
     const current = dimensionForSlot(source, slot);
     if (!slotKey && !existingDimension && current) continue;
     const option = document.createElement('option'); option.value = slot.key; option.textContent = current ? `${slot.label} (replace current link)` : slot.label; target.appendChild(option);
@@ -853,6 +878,35 @@ function removeManualDimension(source, dimension) {
   unlinkDimension(source, dimension.id);
   source.dimensions = source.dimensions.filter((d) => d.id !== dimension.id);
   invalidateApproval(); render(); scheduleSave();
+}
+
+function makeProcessSlotCard(source, slot) {
+  const owner = source?.analysis?.parts?.[slot.partIndex]?.features?.[slot.featureIndex];
+  const process = ['polished','unpolished'].includes(owner?.cutout_finish) ? { value:owner.cutout_finish, confirmed:Boolean(owner.cutout_finish_confirmed) } : null;
+  const card = document.createElement('article');
+  card.className = `dimension-row feature-dimension ${process?.confirmed ? 'is-confirmed' : ''}`;
+  card.innerHTML = `<div class="dimension-title-row"><strong>${escapeHtml(slot.label)}</strong><span class="parameter-pill process">Process</span></div><p class="small muted">Choose the actual workshop finish. This sets the minimum permitted internal radius.</p>`;
+  const select = document.createElement('select');
+  select.className = 'dimension-ref';
+  select.innerHTML = '<option value="unknown">Choose finish</option><option value="polished">Polished / CNC — minimum R15</option><option value="unpolished">Unpolished — minimum R6</option>';
+  select.value = process?.value || 'unknown';
+  select.disabled = isFrozen();
+  const confirm = document.createElement('button');
+  confirm.type = 'button'; confirm.className = `dimension-confirm button ${process?.confirmed ? 'confirmed' : ''}`;
+  confirm.textContent = process?.confirmed ? 'Confirmed ✓' : 'Confirm'; confirm.disabled = isFrozen();
+  select.addEventListener('change', () => {
+    owner.cutout_finish = select.value;
+    owner.cutout_finish_confirmed = false;
+    card.classList.remove('is-confirmed'); confirm.classList.remove('confirmed'); confirm.textContent = 'Confirm';
+    invalidateApproval(); renderRelease(); renderDigitalDrawing(source); scheduleSave();
+  });
+  confirm.addEventListener('click', () => {
+    if (!['polished','unpolished'].includes(select.value)) { select.focus(); return; }
+    owner.cutout_finish = select.value; owner.cutout_finish_confirmed = true;
+    invalidateApproval(); render(); scheduleSave();
+  });
+  card.append(select, confirm);
+  return card;
 }
 
 function makeSlotCard(source, slot) {
@@ -925,6 +979,32 @@ function makeSlotCard(source, slot) {
   return card;
 }
 
+function setAllFeatureFinishes(value) {
+  const source=activeSource(); if(!source?.analysis||isFrozen())return;
+  for(const {feature} of finishFeatures(source)){feature.cutout_finish=value;feature.cutout_finish_confirmed=true;}
+  invalidateApproval();render();scheduleSave();
+}
+
+function manufacturingSettingsReady(source) {
+  if (!source?.manufacturingControlsV1) return true;
+  return Number(source?.glassThicknessMm) > 0
+    && typeof source?.toughened === 'boolean';
+}
+
+function renderManufacturingSettings(source) {
+  els.manufacturingSettings.hidden=!source;
+  if(!source){els.bulkFinishControls.hidden=true;return;}
+  els.toughenedGlass.value=source.toughened===true?'yes':source.toughened===false?'no':'';
+  els.glassThickness.value=source.glassThicknessMm||'';
+  els.toughenedGlass.disabled=isFrozen();
+  els.glassThickness.disabled=isFrozen();
+  els.manufacturingSettingsMessage.textContent=manufacturingSettingsReady(source)
+    ? source.toughened?'Toughened-glass safety checks will be applied.':'Thickness recorded. Toughened-glass clearance checks will not be applied.'
+    :'Enter the thickness and select toughened or not toughened before running analysis.';
+  els.bulkFinishControls.hidden=!source.analysis||finishFeatures(source).length===0;
+  els.polishAllBtn.disabled=isFrozen();els.unpolishedAllBtn.disabled=isFrozen();
+}
+
 function clearGeometryPreview() {
   els.geometryPreview.replaceChildren();
   els.geometryPreview.hidden = true;
@@ -985,7 +1065,8 @@ function renderDimensions() {
   const source = activeSource();
   els.dimensionList.innerHTML = '';
   els.addCorrectionBtn.disabled = !source || isFrozen();
-  els.analyseBtn.disabled = !source || isFrozen() || !source.fileKey || ['uploading','analysing'].includes(source.analysisStatus);
+  renderManufacturingSettings(source);
+  els.analyseBtn.disabled = !source || isFrozen() || !source.fileKey || !manufacturingSettingsReady(source) || ['uploading','analysing'].includes(source.analysisStatus);
 
   if (!source) {
     els.activeSourceTitle.textContent = 'Select a drawing';
@@ -999,6 +1080,7 @@ function renderDimensions() {
   const index = state.sources.indexOf(source);
   const stats = reviewStats(source);
   els.activeSourceTitle.textContent = `${drawingLabel(source, index)} · ${source.name}`;
+  els.analyseBtn.textContent=source.analysis?'Analyse again':'Analyse drawing';
   const pageInfo = source.pageCount > 1 ? ` · ${source.pageCount} PDF pages` : '';
   els.activeSourceMeta.textContent = `Confirm each production parameter against the source${pageInfo}. Size measurements never need an edge selector; positions explicitly use centre/edge and an outer reference edge.`;
   if (source.previewUrl) { els.drawingPreview.src = source.previewUrl; els.drawingPreview.hidden = false; els.drawingPlaceholder.hidden = true; }
@@ -1033,6 +1115,15 @@ function renderDimensions() {
     group.dataset.reviewGroup = slots.every(isPerimeterSlot) ? 'perimeter' : 'features';
     const heading = document.createElement('div'); heading.className = 'feature-group-head'; heading.innerHTML = `<strong>${escapeHtml(section)}</strong><span>${slots.filter((slot) => dimensionReadyForSlot(slot, dimensionForSlot(source, slot))).length}/${slots.length}</span>`; group.appendChild(heading);
     for (const slot of slots) group.appendChild(makeSlotCard(source, slot));
+    els.dimensionList.appendChild(group);
+  }
+
+  const finishes=finishFeatures(source);
+  if(finishes.length){
+    const group=document.createElement('section');group.className='feature-group';group.dataset.reviewGroup='features';
+    const confirmed=finishes.filter(({feature})=>feature.cutout_finish_confirmed&&['polished','unpolished'].includes(feature.cutout_finish)).length;
+    group.innerHTML=`<div class="feature-group-head"><strong>Cut-out finishes</strong><span>${confirmed}/${finishes.length}</span></div>`;
+    for(const item of finishes)group.appendChild(makeProcessSlotCard(source,{...item,key:`p${item.partIndex}:f${item.featureIndex}:finish`,label:`${item.feature.id||`Cut-out ${item.featureIndex+1}`} edge finish`}));
     els.dimensionList.appendChild(group);
   }
 
@@ -1249,6 +1340,18 @@ els.addEdgeNotchBtn.addEventListener('click', addEdgeNotchRow);
 els.manualDrawingForm.addEventListener('submit', createManualDrawing);
 document.querySelectorAll('[data-close-manual]').forEach((button) => button.addEventListener('click', () => els.manualDrawingDialog.close()));
 els.analyseBtn.addEventListener('click', () => analyseSource());
+els.toughenedGlass.addEventListener('change',()=>{
+  const source=activeSource();if(!source||isFrozen())return;
+  source.toughened=els.toughenedGlass.value==='yes'?true:els.toughenedGlass.value==='no'?false:null;
+  invalidateApproval();render();scheduleSave();
+});
+els.glassThickness.addEventListener('change',()=>{
+  const source=activeSource();if(!source||isFrozen())return;
+  const value=Number(els.glassThickness.value);source.glassThicknessMm=value>0?value:null;
+  invalidateApproval();render();scheduleSave();
+});
+els.polishAllBtn.addEventListener('click',()=>setAllFeatureFinishes('polished'));
+els.unpolishedAllBtn.addEventListener('click',()=>setAllFeatureFinishes('unpolished'));
 els.addCorrectionBtn.addEventListener('click', () => openDimensionDialog());
 els.pdfBtn.addEventListener('click', createConfirmationPdf);
 els.signedInput.addEventListener('change', async (e) => { await attachSignedProof(e.target.files?.[0]); e.target.value = ''; });

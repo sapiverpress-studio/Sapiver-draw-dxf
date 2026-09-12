@@ -9,7 +9,8 @@ function hasCurvePart(part){
   return (profile.type==='rectangle'&&Array.isArray(profile.corner_radii)&&profile.corner_radii.length>0)
     || (profile.type==='path'&&(profile.boundary_segments||[]).some((segment)=>['arc','connect_arc'].includes(segment.kind)));
 }
-function hasCurveGeometry(source){return (source?.analysis?.parts||[]).some(hasCurvePart);}
+function hasRadiusedFeature(part){return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));}
+function hasCurveGeometry(source){return (source?.analysis?.parts||[]).some((part)=>hasCurvePart(part)||hasRadiusedFeature(part));}
 
 function curveProfileSlots(part,partIndex){
   const slots=[],profile=part?.profile||{},common={partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'profile'};

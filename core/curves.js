@@ -206,7 +206,7 @@ function arcQuarter(cx, cy, r, startDeg, endDeg, label) {
   };
 }
 
-export function buildRoundedRectangle(width, height, radii = {}, { label = 'Panel' } = {}) {
+export function buildRoundedRectangle(width, height, radii = {}, { label = 'Panel', role = 'outer' } = {}) {
   width = Number(width);
   height = Number(height);
   if (!(width > 0 && height > 0)) throw new Error(`${label}: width and height must be positive.`);
@@ -225,13 +225,13 @@ export function buildRoundedRectangle(width, height, radii = {}, { label = 'Pane
   const points = [];
   const addLine = (a, b, name) => {
     if (Math.hypot(b.x - a.x, b.y - a.y) <= EPS) return;
-    const entity = lineEntity(a, b, { role: 'outer', label: name });
-    entities.push(entity);
+    const entity = lineEntity(a, b, { role, label: name });
+    entities.push({ ...entity, role });
     appendBoundaryPoints(points, entity);
   };
   const addArc = (entity) => {
     if (!(entity.r > EPS)) return;
-    entities.push(entity);
+    entities.push({ ...entity, role });
     appendBoundaryPoints(points, entity);
   };
 

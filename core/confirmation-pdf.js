@@ -201,18 +201,22 @@ export async function buildConfirmationPdf(job) {
     const label = `Drawing ${String.fromCharCode(65 + index)}`;
     drawHeader(page, fontBold, job, label);
     page.drawText(safe(source.name), { x: 36, y: 760, font: fontBold, size: 10 });
+    const manufacturing = source.toughened ? `Toughened: Yes · Glass thickness: ${source.glassThicknessMm ?? '—'} mm` : 'Toughened: No';
+    page.drawText(manufacturing, { x: 36, y: 746, font, size: 7.5 });
+    const finishes = (source.analysis?.parts || []).flatMap((part) => (part.features || []).filter((feature) => ['rectangular_cutout','slot','corner_notch','edge_notch'].includes(feature.type)).map((feature) => `${safe(feature.id, feature.type)}: ${feature.cutout_finish === 'polished' ? 'Polished' : feature.cutout_finish === 'unpolished' ? 'Unpolished' : 'Not confirmed'}`));
+    if (finishes.length) page.drawText(`Cut-out finishes: ${finishes.join(' · ').slice(0, 105)}`, { x: 36, y: 735, font, size: 7 });
 
     let tableY = 420;
-    const cleanDrawn = drawCompiledGeometry(page, source.compiledGeometry, 36, 445, 523, 295, font, fontBold, rgb);
+    const cleanDrawn = drawCompiledGeometry(page, source.compiledGeometry, 36, 445, 523, 280, font, fontBold, rgb);
     if (!cleanDrawn) {
       const image = await embedPreview(pdfDoc, source);
       if (image) {
         const bounds = image.scale(1);
-        const maxW = 523, maxH = 295;
+        const maxW = 523, maxH = 280;
         const scale = Math.min(maxW / bounds.width, maxH / bounds.height, 1);
         const w = bounds.width * scale, h = bounds.height * scale;
-        page.drawRectangle({ x: 36, y: 445, width: 523, height: 295, borderWidth: 0.5, borderColor: rgb(0.75, 0.75, 0.75) });
-        page.drawImage(image, { x: 36 + (523 - w) / 2, y: 445 + (295 - h) / 2, width: w, height: h });
+        page.drawRectangle({ x: 36, y: 445, width: 523, height: 280, borderWidth: 0.5, borderColor: rgb(0.75, 0.75, 0.75) });
+        page.drawImage(image, { x: 36 + (523 - w) / 2, y: 445 + (280 - h) / 2, width: w, height: h });
       } else {
         page.drawText('Clean geometry preview unavailable - release must remain blocked.', { x: 36, y: 700, font: fontBold, size: 9 });
         tableY = 660;

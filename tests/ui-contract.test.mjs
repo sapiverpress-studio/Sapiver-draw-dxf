@@ -6,6 +6,7 @@ const app = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
 const share = fs.readFileSync(new URL('../share-release.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../job-v4.css', import.meta.url), 'utf8');
 const geometryPreviewCss = fs.readFileSync(new URL('../geometry-preview.css', import.meta.url), 'utf8');
+const geometry = fs.readFileSync(new URL('../core/geometry.js', import.meta.url), 'utf8');
 
 const selectorIds = [...app.matchAll(/\$\('#([^']+)'\)/g)].map((m) => m[1]);
 for (const id of selectorIds) {
@@ -25,6 +26,17 @@ assert.match(share, /navigator\.share/, 'native Web Share API must be used when 
 assert.match(share, /navigator\.canShare/, 'file sharing capability must be checked');
 assert.match(html, /id="accessKeypad"/, 'six-digit login keypad must be present');
 assert.match(html, /id="manualDrawingBtn"/, 'manual drawing entry must be present');
+assert.match(html, /id="toughenedGlass"/, 'per-drawing toughened control must be present');
+assert.match(html, /id="glassThickness"/, 'toughened glass thickness must be captured');
+assert.match(html, /id="toughenedGlass"[\s\S]*?<option value="">Select one<\/option>/, 'toughened state must require an explicit yes/no selection');
+assert.match(app, /manufacturingControlsV1:true, toughened: null, glassThicknessMm: null/, 'new uploads must begin with manufacturing settings unanswered');
+assert.match(app, /!manufacturingSettingsReady\(source\)/, 'analysis must remain blocked until manufacturing settings are complete');
+const uploadFlow = app.match(/async function addSourceFile\(file\) \{[\s\S]*?\n\}/)?.[0] || '';
+assert.doesNotMatch(uploadFlow, /analyseSource\s*\(/, 'upload completion must not automatically start AI analysis');
+assert.match(html, /id="polishAllBtn"/, 'bulk polished selection must be available');
+assert.match(html, /id="unpolishedAllBtn"/, 'bulk unpolished selection must be available');
+assert.match(geometry, /1\.5\s*\*/, 'toughened edge-clearance rule must remain in the deterministic engine');
+assert.match(geometry, /4\s*\*\s*thickness/, 'toughened corner-clearance rule must remain in the deterministic engine');
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
 assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(app, /dataset\.reviewGroup = slots\.every\(isPerimeterSlot\)/, 'review groups must classify profile and path-segment slots as perimeter controls');

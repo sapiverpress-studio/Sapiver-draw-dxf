@@ -83,6 +83,7 @@ const feature = {
     height_mm: { type: ['number', 'null'] },
     diameter_mm: { type: ['number', 'null'] },
     radius_mm: { type: ['number', 'null'] },
+    cutout_finish: { type: 'string', enum: ['polished', 'unpolished', 'unknown'] },
     x_mm: { type: ['number', 'null'] },
     x_reference: { type: 'string', enum: ['centre', 'edge', 'unknown'] },
     x_from_edge: { type: 'string', enum: ['left', 'right', 'top', 'bottom', 'unknown'] },
@@ -105,7 +106,7 @@ const feature = {
     offset_dimension_id: nullableDimensionId,
   },
   required: [
-    'id', 'type', 'quantity', 'width_mm', 'height_mm', 'diameter_mm', 'radius_mm',
+    'id', 'type', 'quantity', 'width_mm', 'height_mm', 'diameter_mm', 'radius_mm', 'cutout_finish',
     'x_mm', 'x_reference', 'x_from_edge', 'y_mm', 'y_reference', 'y_from_edge', 'touching_edge',
     'width_dimension_id', 'height_dimension_id', 'diameter_dimension_id', 'radius_dimension_id', 'x_dimension_id', 'y_dimension_id',
     'confidence', 'source_note', 'corner', 'depth_mm', 'offset_mm', 'depth_dimension_id', 'offset_dimension_id',

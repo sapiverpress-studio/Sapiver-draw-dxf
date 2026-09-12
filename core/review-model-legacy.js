@@ -72,6 +72,7 @@ function pushFeatureSlots(slots, part, partIndex, feature, featureIndex) {
   if (['rectangular_cutout', 'slot', 'notch', 'other'].includes(feature.type)) {
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:width`, parameter: 'width', field: 'width_dimension_id', valueField: 'width_mm', kind: 'size', label: `${name} width` });
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:height`, parameter: 'height', field: 'height_dimension_id', valueField: 'height_mm', kind: 'size', label: `${name} height` });
+    if (feature.type === 'rectangular_cutout' && (feature.radius_dimension_id || finitePositive(feature.radius_mm))) slots.push({ ...common, key:`p${partIndex}:f${featureIndex}:radius`, parameter:'radius', field:'radius_dimension_id', valueField:'radius_mm', kind:'size', label:`${name} internal radius` });
   } else if (feature.type === 'circular_hole') {
     slots.push({ ...common, key: `p${partIndex}:f${featureIndex}:diameter`, parameter: 'diameter', field: 'diameter_dimension_id', valueField: 'diameter_mm', kind: 'size', label: `${name} diameter` });
   }

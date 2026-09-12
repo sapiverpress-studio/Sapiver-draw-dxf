@@ -154,6 +154,13 @@ const archSvg = geometryToSvg(archGeometry);
 assert.match(archSvg, /polyline/);
 assert.doesNotMatch(archSvg, /NaN|undefined/);
 
+const toughenedArchSource=structuredClone(archSource);
+toughenedArchSource.toughened=true;
+toughenedArchSource.glassThicknessMm=10;
+const toughenedArchGeometry=compileSourceGeometry(toughenedArchSource);
+assert.equal(toughenedArchGeometry.ok,false);
+assert.match(toughenedArchGeometry.errors.join('\n'),/toughened corner clearance on a curved outer profile requires a production-manager check/i);
+
 const riseArchSource = structuredClone(archSource);
 const riseArc = riseArchSource.analysis.parts[0].profile.boundary_segments.find((segment) => segment.kind === 'connect_arc');
 riseArc.radius_mm = null;
@@ -228,6 +235,91 @@ repeatedRadiusSource.dimensions = repeatedRadiusSource.dimensions.filter((item) 
 const repeatedRadiusGeometry = compileSourceGeometry(repeatedRadiusSource);
 assert.equal(repeatedRadiusGeometry.ok, true, repeatedRadiusGeometry.errors.join('\n'));
 assert.equal(repeatedRadiusGeometry.parts[0].entities.filter((entity) => entity.type === 'arc').length, 4);
+
+// Internal rounded rectangular cut-outs use genuine ARC entities in previews,
+// confirmation geometry and R12 DXF output rather than faceted approximations.
+const internalRadiusSource = structuredClone(roundedSource);
+internalRadiusSource.analysis.parts[0].profile.corner_radii = [];
+internalRadiusSource.analysis.parts[0].dimension_ids = ['w','h'];
+internalRadiusSource.dimensions = internalRadiusSource.dimensions.filter((item)=>['w','h'].includes(item.id));
+internalRadiusSource.analysis.parts[0].features = [{
+  id: 'socket', type: 'rectangular_cutout', quantity: 1,
+  width_mm: 140, height_mm: 80, diameter_mm: null, radius_mm: 15,
+  cutout_finish: 'polished', cutout_finish_confirmed: true,
+  x_mm: 250, x_reference: 'centre', x_from_edge: 'left',
+  y_mm: 180, y_reference: 'centre', y_from_edge: 'bottom', touching_edge: 'none',
+  width_dimension_id: 'cw', height_dimension_id: 'ch', diameter_dimension_id: null, radius_dimension_id: 'cr',
+  x_dimension_id: 'cx', y_dimension_id: 'cy', confidence: 'high', source_note: 'R15 corners',
+  corner: 'none', depth_mm: null, offset_mm: null, depth_dimension_id: null, offset_dimension_id: null,
+}];
+internalRadiusSource.analysis.parts[0].dimension_ids = ['w','h','cw','ch','cr','cx','cy'];
+internalRadiusSource.dimensions.push(
+  dim('cw',140), dim('ch',80), dim('cr',15,'size','unknown','radius'),
+  dim('cx',250,'centre','left','position'), dim('cy',180,'centre','bottom','position'),
+);
+const internalRadiusGeometry = compileSourceGeometry(structuredClone(internalRadiusSource));
+assert.equal(internalRadiusGeometry.ok,true,internalRadiusGeometry.errors.join('\n'));
+assert.equal(internalRadiusGeometry.parts[0].entities.filter((entity)=>entity.role==='cut'&&entity.type==='arc').length,4);
+assert.equal(internalRadiusGeometry.parts[0].entities.filter((entity)=>entity.role==='cut'&&entity.type==='polyline').length,4);
+assert.equal((buildDxf(internalRadiusGeometry.parts[0].entities).match(/\r\nARC\r\n/g)||[]).length,4);
+assert.ok(geometrySlots(structuredClone(internalRadiusSource)).some((slot)=>slot.ownerType==='feature'&&slot.parameter==='radius'));
+assert.match(reviewDrawingSvg(structuredClone(internalRadiusSource)),/polyline/);
+
+const minimumUnpolishedRadiusSource = structuredClone(internalRadiusSource);
+minimumUnpolishedRadiusSource.dimensions.find((item)=>item.id==='cr').valueMm=6;
+minimumUnpolishedRadiusSource.analysis.parts[0].features[0].cutout_finish='unpolished';
+const minimumUnpolishedRadiusGeometry = compileSourceGeometry(minimumUnpolishedRadiusSource);
+assert.equal(minimumUnpolishedRadiusGeometry.ok,true,minimumUnpolishedRadiusGeometry.errors.join('\n'));
+
+const belowMinimumRadiusSource = structuredClone(internalRadiusSource);
+belowMinimumRadiusSource.dimensions.find((item)=>item.id==='cr').valueMm=5;
+belowMinimumRadiusSource.analysis.parts[0].features[0].cutout_finish='unpolished';
+const belowMinimumRadiusGeometry = compileSourceGeometry(belowMinimumRadiusSource);
+assert.equal(belowMinimumRadiusGeometry.ok,false);
+assert.match(belowMinimumRadiusGeometry.errors.join('\n'),/below Halifax Glass's 6 mm minimum/i);
+
+const polishedBelowMinimumSource = structuredClone(internalRadiusSource);
+polishedBelowMinimumSource.dimensions.find((item)=>item.id==='cr').valueMm=14;
+const polishedBelowMinimumGeometry = compileSourceGeometry(polishedBelowMinimumSource);
+assert.equal(polishedBelowMinimumGeometry.ok,false);
+assert.match(polishedBelowMinimumGeometry.errors.join('\n'),/15 mm minimum for a polished\/CNC cut-out/i);
+
+const unconfirmedFinishSource = structuredClone(internalRadiusSource);
+unconfirmedFinishSource.analysis.parts[0].features[0].cutout_finish_confirmed=false;
+const unconfirmedFinishGeometry = compileSourceGeometry(unconfirmedFinishSource);
+assert.equal(unconfirmedFinishGeometry.ok,false);
+assert.match(unconfirmedFinishGeometry.errors.join('\n'),/confirm whether.*polished\/CNC or unpolished/i);
+
+const impossibleInternalRadiusSource = structuredClone(internalRadiusSource);
+impossibleInternalRadiusSource.dimensions.find((item)=>item.id==='cr').valueMm=45;
+const impossibleInternalRadiusGeometry = compileSourceGeometry(impossibleInternalRadiusSource);
+assert.equal(impossibleInternalRadiusGeometry.ok,false);
+assert.match(impossibleInternalRadiusGeometry.errors.join('\n'),/cannot fit/i);
+
+// An edge notch keeps sharp mouth transitions but receives two exact internal
+// quarter-circle radii at its depth corners.
+const radiusedEdgeNotchSource = structuredClone(internalRadiusSource);
+radiusedEdgeNotchSource.analysis.parts[0].features=[{
+  id:'top-notch',type:'edge_notch',quantity:1,touching_edge:'top',corner:'none',
+  width_mm:100,depth_mm:50,offset_mm:300,radius_mm:15,cutout_finish:'polished',cutout_finish_confirmed:true,
+  width_dimension_id:'nw',depth_dimension_id:'nd',offset_dimension_id:'no',radius_dimension_id:'nr',
+  height_mm:null,diameter_mm:null,x_mm:null,y_mm:null,x_reference:'unknown',x_from_edge:'unknown',y_reference:'unknown',y_from_edge:'unknown',
+  x_dimension_id:null,y_dimension_id:null,diameter_dimension_id:null,confidence:'high',source_note:'R15 internal corners',
+}];
+radiusedEdgeNotchSource.analysis.parts[0].dimension_ids=['w','h','nw','nd','no','nr'];
+radiusedEdgeNotchSource.dimensions=radiusedEdgeNotchSource.dimensions.filter((item)=>['w','h'].includes(item.id));
+radiusedEdgeNotchSource.dimensions.push(dim('nw',100),dim('nd',50),dim('no',300),dim('nr',15,'size','unknown','radius'));
+const radiusedEdgeNotchGeometry=compileSourceGeometry(radiusedEdgeNotchSource);
+assert.equal(radiusedEdgeNotchGeometry.ok,true,radiusedEdgeNotchGeometry.errors.join('\n'));
+assert.equal(radiusedEdgeNotchGeometry.parts[0].entities.filter((entity)=>entity.role==='outer'&&entity.type==='arc').length,2);
+assert.equal((buildDxf(radiusedEdgeNotchGeometry.parts[0].entities).match(/\r\nARC\r\n/g)||[]).length,2);
+
+const radiusedCornerNotchSource=structuredClone(radiusedEdgeNotchSource);
+radiusedCornerNotchSource.analysis.parts[0].features[0]={...radiusedCornerNotchSource.analysis.parts[0].features[0],id:'corner-notch',type:'corner_notch',corner:'top-right',touching_edge:'none',offset_mm:null,offset_dimension_id:null};
+radiusedCornerNotchSource.analysis.parts[0].dimension_ids=['w','h','nw','nd','nr'];
+const radiusedCornerNotchGeometry=compileSourceGeometry(radiusedCornerNotchSource);
+assert.equal(radiusedCornerNotchGeometry.ok,true,radiusedCornerNotchGeometry.errors.join('\n'));
+assert.equal(radiusedCornerNotchGeometry.parts[0].entities.filter((entity)=>entity.role==='outer'&&entity.type==='arc').length,1);
 
 const unconfirmedRadiusSource = structuredClone(archSource);
 unconfirmedRadiusSource.dimensions.find((item) => item.id === 'radius').confirmed = false;

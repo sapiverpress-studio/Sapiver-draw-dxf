@@ -84,7 +84,15 @@ function repairCurveSlot(source,slot,dimensions){
     const candidates=dimensions.filter((d)=>finitePositive(d.valueMm)&&nearlyEqual(d.valueMm,owner[slot.valueField]));
     if(candidates.length===1){dimension=candidates[0];owner[slot.field]=dimension.id;}
   }
-  if(dimension)applySizeSemantics(slot,dimension);
+  if(dimension){
+    const label=String(`${slot.label} ${dimension.label}`).toLowerCase();
+    const straightSegment=slot.ownerType==='segment'&&['horizontal','vertical'].includes(owner.kind);
+    const radiusOnStraight=straightSegment&&(dimension.role==='radius'||/\b(radius|rad)\b/.test(String(dimension.label||'').toLowerCase()));
+    const sideConflict=(/\bleft\b/.test(String(slot.label).toLowerCase())&&/\bright\b/.test(String(dimension.label).toLowerCase()))
+      ||(/\bright\b/.test(String(slot.label).toLowerCase())&&/\bleft\b/.test(String(dimension.label).toLowerCase()));
+    if(radiusOnStraight||sideConflict){owner[slot.field]=null;owner[slot.valueField]=null;return;}
+    applySizeSemantics(slot,dimension);
+  }
 }
 export function repairGeometryLinks(source){
   if(!hasCurveGeometry(source))return legacy.repairGeometryLinks(source);
@@ -152,12 +160,43 @@ function pendingCurveSvg(source){
   const part=(source?.analysis?.parts||[]).find(hasCurvePart),label=partName(part||{},0);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" role="img" aria-label="Curved drawing awaiting confirmation"><rect width="100%" height="100%" fill="white"/><text x="40" y="42" font-family="system-ui,sans-serif" font-size="17" font-weight="700" fill="#101828">${String(label).replace(/[&<>]/g,'')}</text><path d="M180 300 L180 155 Q450 40 720 155 L720 300 Z" fill="none" stroke="#98a2b3" stroke-width="2" stroke-dasharray="8 6"/><text x="450" y="350" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#667085">Confirm the perimeter dimensions and radii to render the measured curve.</text></svg>`;
 }
+function progressiveCurveSvg(source,slots){
+  const proposal=structuredClone(source);
+  for(const dimension of proposal.dimensions||[])if(finitePositive(dimension.valueMm))dimension.confirmed=true;
+  for(const part of proposal.analysis?.parts||[])for(const feature of part.features||[]){
+    feature.cutout_finish_confirmed=true;
+    if(!['polished','unpolished'].includes(feature.cutout_finish))feature.cutout_finish='unpolished';
+  }
+  const geometry=compileSourceGeometry(proposal);
+  if(!geometry.parts?.length)return '';
+  const normal=(value)=>String(value||'').trim().toLowerCase();
+  const ready=(slot)=>dimensionReadyForSlot(slot,dimensionForSlot(source,slot));
+  return geometryToSvg(geometry,{width:900,height:430,padding:42,entityState:(entity,compiledPart)=>{
+    const partIndex=(source.analysis?.parts||[]).findIndex((part)=>String(part.id||part.label)===String(compiledPart.id||compiledPart.label));
+    if(entity.featureId){
+      const featureIndex=source.analysis?.parts?.[partIndex]?.features?.findIndex((feature)=>String(feature.id)===String(entity.featureId));
+      const featureSlots=slots.filter((slot)=>slot.partIndex===partIndex&&slot.featureIndex===featureIndex);
+      return featureSlots.length&&featureSlots.every(ready)?'confirmed':'pending';
+    }
+    const segmentIndex=source.analysis?.parts?.[partIndex]?.profile?.boundary_segments?.findIndex((segment)=>normal(segment.label||segment.id)===normal(entity.label));
+    if(segmentIndex<0)return 'pending';
+    const segmentSlots=slots.filter((slot)=>slot.partIndex===partIndex&&slot.ownerType==='segment'&&slot.segmentIndex===segmentIndex);
+    if(!segmentSlots.length)return 'pending';
+    const segment=source.analysis.parts[partIndex].profile.boundary_segments[segmentIndex];
+    if(segment.kind==='connect_arc'){
+      const perimeterSlots=slots.filter((slot)=>slot.partIndex===partIndex&&isPerimeterSlot(slot));
+      return segmentSlots.every(ready)&&perimeterSlots.every(ready)?'confirmed':'pending';
+    }
+    return segmentSlots.every(ready)?'confirmed':'pending';
+  }});
+}
 export function reviewDrawingSvg(source){
   if(!hasCurveGeometry(source))return legacy.reviewDrawingSvg(source);
   repairGeometryLinks(source);const slots=geometrySlots(source);
   if(slots.length&&slots.every((slot)=>dimensionReadyForSlot(slot,dimensionForSlot(source,slot)))){
     const geometry=compileSourceGeometry(source);if(geometry.ok)return geometryToSvg(geometry,{width:900,height:430,padding:42});
   }
+  const progressive=progressiveCurveSvg(source,slots);if(progressive)return progressive;
   return pendingCurveSvg(source);
 }
 export function reviewDrawingDataUrl(source){if(!hasCurveGeometry(source))return legacy.reviewDrawingDataUrl(source);const svg=reviewDrawingSvg(source);return svg?`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`:'';}

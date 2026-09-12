@@ -100,6 +100,38 @@ export function repairGeometryLinks(source){
   for(const slot of geometrySlots(source)) if(slot.ownerType!=='feature') repairCurveSlot(source,slot,dimensions);
   return source;
 }
+function deriveFeatureValues(source){
+  for(const part of source?.analysis?.parts||[])for(const feature of part.features||[]){
+    const radius=Number(feature.radius_mm),width=Number(feature.width_mm),height=Number(feature.height_mm);
+    if(feature.type==='circular_hole'&&!(Number(feature.diameter_mm)>0)&&radius>0)feature.diameter_mm=radius*2;
+    if(feature.type!=='slot'||!(radius>0))continue;
+    const minor=radius*2;
+    if(!(height>0)&&width>minor)feature.height_mm=minor;
+    else if(!(width>0)&&height>minor)feature.width_mm=minor;
+  }
+}
+export function materialiseDerivedDimensions(source){
+  if(!source?.analysis)return source;
+  source.dimensions ||= [];
+  deriveFeatureValues(source);
+  repairGeometryLinks(source);
+  for(const slot of geometrySlots(source)){
+    if(dimensionForSlot(source,slot))continue;
+    const owner=slotOwner(source,slot),value=Number(owner?.[slot.valueField]);
+    if(!(value>0))continue;
+    const reference=slot.kind==='position'?owner?.[slot.referenceField]:'size';
+    const fromEdge=slot.kind==='position'?owner?.[slot.fromEdgeField]:'unknown';
+    const allowed=slot.axis==='x'?['left','right']:['top','bottom'];
+    if(slot.kind==='position'&&(!['centre','edge'].includes(reference)||!allowed.includes(fromEdge)))continue;
+    const dimension={
+      id:`derived:${slot.key}`,label:slot.label,valueMm:value,
+      role:slot.kind==='position'?'position':slot.parameter==='radius'?'radius':slot.parameter==='diameter'?'diameter':'size',
+      reference,fromEdge,rawText:'Calculated from analysed geometry',confidence:'derived',confirmed:false,
+    };
+    source.dimensions.push(dimension);setSlotDimensionId(source,slot,dimension.id);
+  }
+  repairGeometryLinks(source);return source;
+}
 export function dimensionForSlot(source,slot){if(!hasCurveGeometry(source))return legacy.dimensionForSlot(source,slot);const id=slotDimensionId(source,slot);return id?(source?.dimensions||[]).find((d)=>d.id===id)||null:null;}
 export function dimensionReadyForSlot(slot,dimension){
   if(!slot||!(dimension?.confirmed&&finitePositive(dimension.valueMm)))return false;

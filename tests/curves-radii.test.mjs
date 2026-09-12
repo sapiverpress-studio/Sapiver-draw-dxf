@@ -6,6 +6,7 @@ import { buildDxf } from '../core/dxf.js';
 import {
   geometrySlots,
   isPerimeterSlot,
+  repairGeometryLinks,
   reviewDrawingSvg,
   reviewStats,
 } from '../core/review-model.js';
@@ -73,6 +74,52 @@ assert.throws(
   'an impossible radius must block production geometry',
 );
 assert.throws(() => radiusFromChordRise(1200, 700, { extent: 'minor' }), /minor arc rise/i);
+
+// Curved shoulders must keep their own dimensions. An overall width or radius
+// may never be accepted as a straight shoulder/drop measurement.
+const shoulderExtraction={
+  dimensions:[
+    {id:'bottom',raw_text:'1800',value:1800,role:'overall',reference:'size',target:'p1.profile.segments.s1.length',from_edge:'unknown',confidence:'high'},
+    {id:'left-shoulder',raw_text:'120',value:120,role:'size',reference:'size',target:'p1.profile.segments.s6.length',from_edge:'unknown',confidence:'high'},
+    {id:'left-drop',raw_text:'80',value:80,role:'size',reference:'size',target:'p1.profile.segments.s5.length',from_edge:'unknown',confidence:'high'},
+    {id:'right-shoulder',raw_text:'150',value:150,role:'size',reference:'size',target:'p1.profile.segments.s2.length',from_edge:'unknown',confidence:'high'},
+    {id:'right-drop',raw_text:'100',value:100,role:'size',reference:'size',target:'p1.profile.segments.s3.length',from_edge:'unknown',confidence:'high'},
+    {id:'r20',raw_text:'R20',value:20,role:'radius',reference:'size',target:'p1.profile.segments.s3.length',from_edge:'unknown',confidence:'high'},
+  ],parts:[{id:'p1',profile:{type:'path',boundary_segments:[
+    {id:'s1',label:'Bottom edge',kind:'horizontal',direction:'right',length_mm:1800,dimension_id:'bottom'},
+    {id:'s2',label:'Right shoulder ledge',kind:'horizontal',direction:'left',length_mm:150,dimension_id:'right-shoulder'},
+    {id:'s3',label:'Right shoulder drop',kind:'vertical',direction:'up',length_mm:1800,dimension_id:'bottom'},
+    {id:'s4',label:'Top arc',kind:'connect_arc',direction:'connect',length_mm:null,dimension_id:null},
+    {id:'s5',label:'Left shoulder drop',kind:'vertical',direction:'down',length_mm:80,dimension_id:'left-drop'},
+    {id:'s6',label:'Left shoulder ledge',kind:'horizontal',direction:'left',length_mm:120,dimension_id:'left-shoulder'},
+  ]},features:[]}],uncertainties:[],analysis_checks:{},production_ready:true,requires_human_review:true};
+enforceAnalysisChecks(shoulderExtraction);
+assert.equal(shoulderExtraction.parts[0].profile.boundary_segments[2].dimension_id,'right-drop','overall width must be replaced by the right shoulder drop');
+assert.equal(shoulderExtraction.parts[0].profile.boundary_segments[2].length_mm,100);
+assert.equal(shoulderExtraction.parts[0].profile.boundary_segments.length,6,'both shoulder ledges and drops remain in the perimeter');
+
+const sharedPositionSource={
+  dimensions:[
+    dim('bottom',1800),dim('right',850),dim('right-shoulder',150),dim('right-drop',100),dim('left-shoulder',120),dim('left-drop',80),dim('radius',2400),
+    {...dim('shared-x',300,'edge','left','position'),role:'position'},
+    {...dim('hole-y',260,'centre','bottom','position'),role:'position'},
+    {...dim('slot-y',180,'centre','bottom','position'),role:'position'},
+    dim('hole-dia',40),dim('slot-width',120),dim('slot-height',40),
+  ],analysis:{parts:[{id:'p1',label:'Shouldered arch',profile:{type:'path',boundary_segments:[
+    {id:'s1',label:'Bottom',kind:'horizontal',direction:'right',length_mm:1800,dimension_id:'bottom'},
+    {id:'s2',label:'Right side',kind:'vertical',direction:'up',length_mm:850,dimension_id:'right'},
+    {id:'s3',label:'Right shoulder',kind:'horizontal',direction:'left',length_mm:150,dimension_id:'right-shoulder'},
+    {id:'s4',label:'Right rise',kind:'vertical',direction:'up',length_mm:100,dimension_id:'right-drop'},
+    {id:'s5',label:'Arch',kind:'connect_arc',direction:'connect',radius_mm:2400,radius_dimension_id:'radius'},
+    {id:'s6',label:'Left drop',kind:'vertical',direction:'down',length_mm:80,dimension_id:'left-drop'},
+    {id:'s7',label:'Left shoulder',kind:'horizontal',direction:'left',length_mm:120,dimension_id:'left-shoulder'},
+  ]},features:[
+    {id:'hole',type:'circular_hole',quantity:1,diameter_mm:40,diameter_dimension_id:'hole-dia',x_mm:300,x_reference:'edge',x_from_edge:'left',x_dimension_id:'shared-x',y_mm:260,y_reference:'centre',y_from_edge:'bottom',y_dimension_id:'hole-y'},
+    {id:'slot',type:'slot',quantity:1,width_mm:120,width_dimension_id:'slot-width',height_mm:40,height_dimension_id:'slot-height',x_mm:300,x_reference:'edge',x_from_edge:'left',x_dimension_id:'shared-x',y_mm:180,y_reference:'centre',y_from_edge:'bottom',y_dimension_id:'slot-y'},
+  ]}]}}
+repairGeometryLinks(sharedPositionSource);
+assert.equal(sharedPositionSource.analysis.parts[0].features[0].x_dimension_id,'shared-x');
+assert.equal(sharedPositionSource.analysis.parts[0].features[1].x_dimension_id,null,'two features must never share one positional dimension id');
 
 // A closing arc can join shoulders at different heights because its endpoints
 // are fixed by the preceding confirmed straight segments.
@@ -212,6 +259,13 @@ assert.equal(archStats.total, 7);
 assert.equal(archStats.confirmed, 7);
 const reviewSvg = reviewDrawingSvg(structuredClone(archSource));
 assert.match(reviewSvg, /Measured curved perimeter/);
+const progressiveSource=structuredClone(archSource);
+progressiveSource.dimensions.find((dimension)=>dimension.id==='right').confirmed=false;
+progressiveSource.dimensions.find((dimension)=>dimension.id==='x').confirmed=false;
+const progressiveSvg=reviewDrawingSvg(progressiveSource);
+assert.match(progressiveSvg,/data-state="confirmed"/,'confirmed perimeter segments render immediately');
+assert.match(progressiveSvg,/data-state="pending"/,'unconfirmed perimeter/features remain visible as dashed proposals');
+assert.match(progressiveSvg,/Blue confirmed · Grey dashed awaiting confirmation/);
 assert.doesNotMatch(reviewSvg, /NaN|undefined/);
 
 const roundedSource = {

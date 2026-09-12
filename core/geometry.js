@@ -367,7 +367,10 @@ export function geometryToSvg(geometry,{width=900,height=600,padding=28}={}){
       else chunks.push(`<polygon points="${entity.points.map((p)=>`${p.x},${p.y}`).join(' ')}" stroke-width="${sw}"/>`);
     }
     chunks.push('</g>');
-    const text=part.profile.type==='rectangle'?`${part.profile.width} × ${part.profile.height} mm · radius corners`:`Measured curved perimeter · ${part.profile.segments?.length||0} segments`;
+    const rounded=(value)=>Math.round(Number(value)*100)/100;
+    const text=part.profile.type==='rectangle'
+      ?`${part.profile.width} × ${part.profile.height} mm · radius corners`
+      :`Measured curved perimeter · Overall ${rounded(part.bounds.width)} × ${rounded(part.bounds.height)} mm (calculated) · ${part.profile.segments?.length||0} segments`;
     chunks.push(`<text x="${x0+padding}" y="${y0+cellH-8}" font-family="system-ui,sans-serif" font-size="12" fill="#475467">${esc(text)}</text>`);
   });
   chunks.push('</svg>');return chunks.join('');

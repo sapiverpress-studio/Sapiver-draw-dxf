@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { compileSourceGeometry } from '../core/geometry.js';
-import { dimensionForSlot, geometrySlots, isPerimeterSlot, repairGeometryLinks, reviewDrawingSvg, reviewStats } from '../core/review-model.js';
+import { dimensionForSlot, geometrySlots, isPerimeterSlot, materialiseDerivedDimensions, repairGeometryLinks, reviewDrawingSvg, reviewStats } from '../core/review-model.js';
 
 const source = {
   analysis: {
@@ -68,6 +68,32 @@ assert.equal(reviewStats(source).total, 10, 'unlinked manual reads must not expa
 assert.equal(isPerimeterSlot({ ownerType: 'profile' }), true);
 assert.equal(isPerimeterSlot({ ownerType: 'segment' }), true, 'measured path segments must remain visible in the perimeter stage');
 assert.equal(isPerimeterSlot({ ownerType: 'feature' }), false);
+
+const derivedSlotSource={
+  analysis:{parts:[{
+    id:'derived-panel',label:'Derived panel',
+    profile:{type:'rectangle',width_mm:1000,height_mm:500,width_dimension_id:'w',height_dimension_id:'h'},
+    features:[{
+      id:'capsule',type:'slot',quantity:1,width_mm:120,height_mm:null,radius_mm:20,
+      width_dimension_id:'sw',height_dimension_id:null,x_mm:300,x_reference:'centre',x_from_edge:'left',
+      y_mm:null,y_reference:'unknown',y_from_edge:'unknown',x_dimension_id:'sx',y_dimension_id:null,
+    }],
+  }]},
+  dimensions:[
+    {id:'w',valueMm:1000,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'h',valueMm:500,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'sw',valueMm:120,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'sx',valueMm:300,reference:'centre',fromEdge:'left',confirmed:false},
+  ],
+};
+materialiseDerivedDimensions(derivedSlotSource);
+assert.equal(derivedSlotSource.analysis.parts[0].features[0].height_mm,40,'slot height must be deduced as twice its semicircular end radius');
+const derivedHeightSlot=geometrySlots(derivedSlotSource).find((slot)=>slot.featureIndex===0&&slot.parameter==='height');
+const derivedHeight=dimensionForSlot(derivedSlotSource,derivedHeightSlot);
+assert.equal(derivedHeight.valueMm,40);
+assert.equal(derivedHeight.confidence,'derived');
+assert.equal(derivedHeight.confirmed,false,'calculated manufacturing values still require human confirmation');
+assert.equal(reviewStats(derivedSlotSource).missing,1,'the genuinely absent Y position must remain the only requested value');
 
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

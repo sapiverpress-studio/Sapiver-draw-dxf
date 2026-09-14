@@ -161,5 +161,46 @@ const straightSvg=reviewDrawingSvg(straightPathSource);
 assert.doesNotMatch(straightSvg,/Confirm overall width and height|awaiting confirmation/i,'a confirmed straight path must render its measured outline');
 assert.match(straightSvg,/<path|<polyline|<polygon/);
 
+const incompleteFeatureSource=structuredClone(straightPathSource);
+incompleteFeatureSource.dimensions.forEach((dimension)=>{ dimension.confirmed=false; });
+incompleteFeatureSource.analysis.parts[0].features=[{
+  id:'hole-without-y',type:'circular_hole',quantity:1,diameter_mm:40,diameter_dimension_id:'dia',
+  x_mm:200,x_dimension_id:'hx',x_reference:'centre',x_from_edge:'left',
+  y_mm:null,y_dimension_id:null,y_reference:'unknown',y_from_edge:'unknown',
+}];
+incompleteFeatureSource.dimensions.push(
+  {id:'dia',label:'Hole diameter',valueMm:40,role:'diameter',reference:'size',fromEdge:'unknown',confirmed:false},
+  {id:'hx',label:'Hole X',valueMm:200,role:'position',reference:'centre',fromEdge:'left',confirmed:false},
+);
+repairGeometryLinks(incompleteFeatureSource);
+const incompleteFeatureSvg=reviewDrawingSvg(incompleteFeatureSource);
+assert.doesNotMatch(incompleteFeatureSvg,/Confirm overall width and height|awaiting confirmation/i,'an incomplete feature must not suppress a drawable outer path');
+assert.match(incompleteFeatureSvg,/<path|<polyline|<polygon/);
+
+const semicircleDeductionSource={
+  analysis:{parts:[{id:'p1',label:'Panel with semicircular edge cut-out',profile:{type:'path',boundary_segments:[
+    {id:'bottom-right',label:'Bottom-right shoulder',kind:'horizontal',direction:'left',length_mm:600,dimension_id:'br'},
+    {id:'recess',label:'Semicircular recess',kind:'arc',direction:'left',radius_mm:300,radius_dimension_id:'rad',rise_mm:300,rise_dimension_id:'rise',chord_mm:null,chord_dimension_id:null,bulge_side:'right',arc_extent:'semicircle'},
+    {id:'bottom-left',label:'Bottom-left shoulder',kind:'horizontal',direction:'left',length_mm:600,dimension_id:'bl'},
+    {id:'left',label:'Left side',kind:'vertical',direction:'up',length_mm:800,dimension_id:'side'},
+    {id:'top',label:'Top',kind:'horizontal',direction:'right',length_mm:1800,dimension_id:'top'},
+    {id:'right',label:'Right closing side',kind:'connect',direction:'down'},
+  ]},features:[]}]},
+  dimensions:[
+    {id:'br',valueMm:600,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'rad',valueMm:300,role:'radius',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'rise',valueMm:300,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'bl',valueMm:600,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'side',valueMm:800,reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'top',valueMm:1800,reference:'size',fromEdge:'unknown',confirmed:false},
+  ],
+};
+materialiseDerivedDimensions(semicircleDeductionSource);
+const chordSlot=geometrySlots(semicircleDeductionSource).find((slot)=>slot.parameter==='chord');
+const chordDimension=dimensionForSlot(semicircleDeductionSource,chordSlot);
+assert.equal(chordDimension.valueMm,600,'a semicircular chord must be deduced as twice its radius');
+assert.equal(chordDimension.confidence,'derived');
+assert.doesNotMatch(reviewDrawingSvg(semicircleDeductionSource),/aria-label="Curved drawing awaiting confirmation"/i,'a deduced semicircular chord must allow the outer profile to render progressively');
+
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

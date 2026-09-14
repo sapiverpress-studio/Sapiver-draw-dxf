@@ -29,8 +29,9 @@ const source = {
 base.repairGeometryLinks(source);
 assert.equal(reviewStats(source).missing, 1, 'only the genuinely absent Y position should remain unresolved');
 
-const oldSvg = base.reviewDrawingSvg(structuredClone(source));
-assert.match(oldSvg, /Confirm overall width and height to scale the drawing/, 'the pre-fix renderer demonstrates the rectangle fallback defect');
+const baseSvg = base.reviewDrawingSvg(structuredClone(source));
+assert.doesNotMatch(baseSvg, /Confirm overall width and height to scale the drawing/, 'the main renderer must draw the known perimeter while a feature remains incomplete');
+assert.match(baseSvg, /<path|<polyline|<polygon/, 'the main renderer must contain measured perimeter geometry');
 
 const fixedSvg = reviewDrawingSvg(source);
 assert.doesNotMatch(fixedSvg, /Confirm overall width and height to scale the drawing/, 'a valid path perimeter must not fall back to the rectangle placeholder');

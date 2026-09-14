@@ -7,7 +7,7 @@ function partName(part,index){return String(part?.label||part?.id||`Part ${index
 function hasCurvePart(part){
   const profile=part?.profile||{};
   return (profile.type==='rectangle'&&Array.isArray(profile.corner_radii)&&profile.corner_radii.length>0)
-    || (profile.type==='path'&&(profile.boundary_segments||[]).some((segment)=>['arc','quarter_arc','connect_arc'].includes(segment.kind)));
+    || (profile.type==='path'&&Array.isArray(profile.boundary_segments)&&profile.boundary_segments.length>0);
 }
 function hasRadiusedFeature(part){return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));}
 function hasCurveGeometry(source){return (source?.analysis?.parts||[]).some((part)=>hasCurvePart(part)||hasRadiusedFeature(part));}
@@ -178,10 +178,23 @@ function deriveFeatureValues(source){
     else if(!(width>0)&&height>minor)feature.width_mm=minor;
   }
 }
+function deriveBoundaryValues(source){
+  for(const part of source?.analysis?.parts||[])for(const segment of part?.profile?.boundary_segments||[]){
+    if(segment.kind!=='arc'||finitePositive(segment.chord_mm))continue;
+    const radius=Number(segment.radius_mm),rise=Number(segment.rise_mm);
+    if(!(radius>0))continue;
+    if(segment.arc_extent==='semicircle')segment.chord_mm=radius*2;
+    else if(rise>0&&rise<=radius*2){
+      const halfChordSquared=2*radius*rise-rise*rise;
+      if(halfChordSquared>0)segment.chord_mm=2*Math.sqrt(halfChordSquared);
+    }
+  }
+}
 export function materialiseDerivedDimensions(source){
   if(!source?.analysis)return source;
   source.dimensions ||= [];
   deriveFeatureValues(source);
+  deriveBoundaryValues(source);
   repairGeometryLinks(source);
   for(const slot of geometrySlots(source)){
     if(dimensionForSlot(source,slot))continue;
@@ -223,9 +236,21 @@ function pendingCurveSvg(source){
 function progressiveCurveSvg(source,slots){
   const proposal=structuredClone(source);
   for(const dimension of proposal.dimensions||[])if(finitePositive(dimension.valueMm))dimension.confirmed=true;
-  for(const part of proposal.analysis?.parts||[])for(const feature of part.features||[]){
-    feature.cutout_finish_confirmed=true;
-    if(!['polished','unpolished'].includes(feature.cutout_finish))feature.cutout_finish='unpolished';
+  for(const [partIndex,part] of (proposal.analysis?.parts||[]).entries()){
+    part.features=(part.features||[]).filter((feature,featureIndex)=>{
+      const featureSlots=slots.filter((slot)=>slot.partIndex===partIndex&&slot.featureIndex===featureIndex);
+      return featureSlots.length>0&&featureSlots.every((slot)=>{
+        const dimension=dimensionForSlot(proposal,slot);
+        if(!finitePositive(dimension?.valueMm))return false;
+        if(slot.kind!=='position')return true;
+        const allowed=slot.axis==='x'?['left','right']:['top','bottom'];
+        return ['centre','edge'].includes(dimension.reference)&&allowed.includes(dimension.fromEdge);
+      });
+    });
+    for(const feature of part.features){
+      feature.cutout_finish_confirmed=true;
+      if(!['polished','unpolished'].includes(feature.cutout_finish))feature.cutout_finish='unpolished';
+    }
   }
   const geometry=compileSourceGeometry(proposal);
   if(!geometry.parts?.length)return '';

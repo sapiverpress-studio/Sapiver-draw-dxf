@@ -12,6 +12,28 @@ function hasCurvePart(part){
 function hasRadiusedFeature(part){return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));}
 function hasCurveGeometry(source){return (source?.analysis?.parts||[]).some((part)=>hasCurvePart(part)||hasRadiusedFeature(part));}
 
+const RECTANGLE_CORNERS=['bottom-left','bottom-right','top-right','top-left'];
+function expandTypicalCornerRadii(source){
+  const dimensions=source?.dimensions||[];
+  for(const [partIndex,part] of (source?.analysis?.parts||[]).entries()){
+    if(part?.profile?.type!=='rectangle')continue;
+    const candidates=dimensions.filter((dimension)=>finitePositive(dimension?.valueMm)
+      && (dimension.role==='radius'||/^\s*R\s*\d/i.test(dimension.rawText||''))
+      && /\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.rawText||''} ${dimension.label||''}`)
+      && (!/^p\d+[.]/i.test(dimension.label||'')||new RegExp(`^p${partIndex+1}[.]profile`,'i').test(dimension.label||'')));
+    if(candidates.length!==1)continue;
+    const dimension=candidates[0],byCorner=new Map((part.profile.corner_radii||[]).map((item)=>[item.corner,item]));
+    part.profile.corner_radii ||= [];
+    for(const corner of RECTANGLE_CORNERS){
+      const existing=byCorner.get(corner);
+      if(!existing)part.profile.corner_radii.push({corner,radius_mm:Number(dimension.valueMm),radius_dimension_id:dimension.id});
+      else if(!existing.radius_dimension_id||!finitePositive(existing.radius_mm)){
+        existing.radius_mm=Number(dimension.valueMm);existing.radius_dimension_id=dimension.id;
+      }
+    }
+  }
+}
+
 function curveProfileSlots(part,partIndex){
   const slots=[],profile=part?.profile||{},common={partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'profile'};
   if(profile.type==='rectangle'){
@@ -73,8 +95,32 @@ export function slotByKey(source,key){if(!hasCurveGeometry(source))return legacy
 
 function applySizeSemantics(slot,dimension){
   if(!dimension)return;
+  if(!dimension.analysisTarget&&/^p\d+[.]/i.test(dimension.label||''))dimension.analysisTarget=dimension.label;
   dimension.label=slot.label; dimension.reference='size'; dimension.fromEdge='unknown';
   dimension.role=slot.parameter==='radius'?'radius':slot.parameter==='diameter'?'diameter':['profile','segment','corner-radius'].includes(slot.ownerType)?'overall':'size';
+}
+function words(value){return String(value||'').toLowerCase().replace(/[_-]+/g,' ').match(/[a-z0-9]+/g)||[];}
+function escaped(value){return String(value||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function curveCandidateScore(source,slot,dimension){
+  const part=source?.analysis?.parts?.[slot.partIndex],owner=slotOwner(source,slot),label=String(dimension?.analysisTarget||dimension?.label||''),raw=String(dimension?.rawText||'');
+  let score=0;
+  if(slot.ownerType==='segment'){
+    const ids=[owner?.id,`s${slot.segmentIndex+1}`].filter(Boolean).map(escaped).join('|');
+    if(new RegExp(`(?:segments?|boundary)\\.(?:${ids})(?:\\.${escaped(slot.parameter)}|\\.sagitta|[\\s/]|$)`,'i').test(label))score+=100;
+  }
+  if(slot.ownerType==='corner-radius'){
+    const corner=escaped(owner?.corner||'');
+    if(new RegExp(`corner[_ .-]?radii\\.${corner}`,'i').test(label))score+=100;
+    if(/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${raw} ${label}`))score+=40;
+  }
+  if(slot.parameter==='radius'){
+    if(dimension.role==='radius')score+=10;
+    if(/^\s*R\s*\d/i.test(raw))score+=8;
+  }
+  const slotWords=new Set(words(`${slot.label} ${owner?.label||''}`).filter((word)=>word.length>2&&!['from','into','with','side'].includes(word)));
+  const dimensionWords=new Set(words(`${label} ${raw}`));
+  score+=[...slotWords].filter((word)=>dimensionWords.has(word)).length*3;
+  return score;
 }
 function repairCurveSlot(source,slot,dimensions){
   const owner=slotOwner(source,slot); if(!owner)return;
@@ -84,17 +130,31 @@ function repairCurveSlot(source,slot,dimensions){
     const candidates=dimensions.filter((d)=>finitePositive(d.valueMm)&&nearlyEqual(d.valueMm,owner[slot.valueField]));
     if(candidates.length===1){dimension=candidates[0];owner[slot.field]=dimension.id;}
   }
+  if(!dimension&&['segment','corner-radius'].includes(slot.ownerType)){
+    const ranked=dimensions.filter((candidate)=>finitePositive(candidate.valueMm))
+      .map((candidate)=>({candidate,score:curveCandidateScore(source,slot,candidate)}))
+      .filter((item)=>item.score>=12).sort((a,b)=>b.score-a.score);
+    if(ranked.length&&(!ranked[1]||ranked[0].score>ranked[1].score||ranked[0].candidate.id===ranked[1].candidate.id)){
+      dimension=ranked[0].candidate;owner[slot.field]=dimension.id;owner[slot.valueField]=Number(dimension.valueMm);
+    }
+  }
   if(dimension){
     const label=String(`${slot.label} ${dimension.label}`).toLowerCase();
     const straightSegment=slot.ownerType==='segment'&&['horizontal','vertical'].includes(owner.kind);
     const radiusOnStraight=straightSegment&&(dimension.role==='radius'||/\b(radius|rad)\b/.test(String(dimension.label||'').toLowerCase()));
-    const sideConflict=(/\bleft\b/.test(String(slot.label).toLowerCase())&&/\bright\b/.test(String(dimension.label).toLowerCase()))
-      ||(/\bright\b/.test(String(slot.label).toLowerCase())&&/\bleft\b/.test(String(dimension.label).toLowerCase()));
+    const ids=[owner?.id,slot.ownerType==='segment'?`s${slot.segmentIndex+1}`:null].filter(Boolean).map(escaped).join('|');
+    const explicitlyTargetsOwner=Boolean(ids)&&new RegExp(`(?:^|[/.])(?:${ids})(?:[/.]|$)`,'i').test(dimension.analysisTarget||dimension.label||'');
+    const repeatedRadius=slot.parameter==='radius'&&/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.rawText||''} ${dimension.analysisTarget||''}`);
+    const sideConflict=!explicitlyTargetsOwner&&!repeatedRadius&&(
+      (/\bleft\b/.test(String(slot.label).toLowerCase())&&/\bright\b/.test(String(dimension.label).toLowerCase()))
+      ||(/\bright\b/.test(String(slot.label).toLowerCase())&&/\bleft\b/.test(String(dimension.label).toLowerCase()))
+    );
     if(radiusOnStraight||sideConflict){owner[slot.field]=null;owner[slot.valueField]=null;return;}
     applySizeSemantics(slot,dimension);
   }
 }
 export function repairGeometryLinks(source){
+  expandTypicalCornerRadii(source);
   if(!hasCurveGeometry(source))return legacy.repairGeometryLinks(source);
   const parts=source?.analysis?.parts||[],dimensions=source?.dimensions||[];
   parts.forEach((part)=>{

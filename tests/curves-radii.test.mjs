@@ -440,6 +440,57 @@ assert.ok(profileSchema.required.includes('corner_radii'));
 const segmentSchema = profileSchema.properties.boundary_segments.items;
 for (const field of ['chord_mm', 'chord_dimension_id', 'radius_mm', 'radius_dimension_id', 'rise_mm', 'rise_dimension_id', 'bulge_side', 'arc_extent', 'turn_direction']) assert.ok(segmentSchema.required.includes(field), `boundary segment must require ${field}`);
 assert.ok(segmentSchema.properties.kind.enum.includes('arc'));
+
+// Live-site regression: a clearly read R600/R1100 must not remain in Other
+// reads when it is the only radius belonging to the named perimeter arc.
+const liveArchExtraction={
+  dimensions:[{id:'arc-r',raw_text:'R600',value:600,role:'radius',reference:'size',from_edge:'unknown',target:'p1.profile arched top radius',confidence:'high'}],
+  parts:[{id:'p1',profile:{type:'path',corner_radii:[],boundary_segments:[
+    {id:'s1',label:'Left side',kind:'vertical',direction:'down',length_mm:400,dimension_id:'left',chord_mm:null,chord_dimension_id:null,radius_mm:null,radius_dimension_id:null,rise_mm:null,rise_dimension_id:null,bulge_side:'none',arc_extent:'none',turn_direction:'none'},
+    {id:'s2',label:'Bottom edge',kind:'horizontal',direction:'right',length_mm:1200,dimension_id:'bottom',chord_mm:null,chord_dimension_id:null,radius_mm:null,radius_dimension_id:null,rise_mm:null,rise_dimension_id:null,bulge_side:'none',arc_extent:'none',turn_direction:'none'},
+    {id:'s3',label:'Right side',kind:'vertical',direction:'up',length_mm:400,dimension_id:'right',chord_mm:null,chord_dimension_id:null,radius_mm:null,radius_dimension_id:null,rise_mm:null,rise_dimension_id:null,bulge_side:'none',arc_extent:'none',turn_direction:'none'},
+    {id:'s4',label:'R600 arched top',kind:'connect_arc',direction:'connect',length_mm:null,dimension_id:null,chord_mm:null,chord_dimension_id:null,radius_mm:null,radius_dimension_id:null,rise_mm:null,rise_dimension_id:null,bulge_side:'left',arc_extent:'semicircle',turn_direction:'none'},
+  ]},features:[]}],
+};
+linkExplicitDimensionTargets(liveArchExtraction);
+assert.equal(liveArchExtraction.parts[0].profile.boundary_segments[3].radius_dimension_id,'arc-r','recognised arch radius must link to its arc');
+
+// Live-site regression: an R100 TYP callout applies to every matching outer
+// corner, including corners for which the model omitted a separate entry.
+const typicalCorners={
+  dimensions:[{id:'typ-r',raw_text:'R100 (TYP)',value:100,role:'radius',reference:'size',from_edge:'unknown',target:'p1.profile.corner_radii.top-left.radius',confidence:'high'}],
+  parts:[{id:'p1',profile:{type:'rectangle',boundary_segments:[],corner_radii:[{corner:'top-left',radius_mm:100,radius_dimension_id:'typ-r'}]},features:[]}],
+};
+linkExplicitDimensionTargets(typicalCorners);
+assert.deepEqual(typicalCorners.parts[0].profile.corner_radii.map((item)=>item.corner).sort(),['bottom-left','bottom-right','top-left','top-right']);
+assert.ok(typicalCorners.parts[0].profile.corner_radii.every((item)=>item.radius_dimension_id==='typ-r'));
+
+// Live-site regression: one explicitly shared 800 mm height may feed both
+// named equal path sides, without becoming an unassigned read.
+const sharedHeight={
+  dimensions:[{id:'height',raw_text:'800 mm',value:800,role:'overall',reference:'size',from_edge:'unknown',target:'p1.profile.height and p1.profile.segments.s2/s4.length',confidence:'high'}],
+  parts:[{id:'p1',profile:{type:'path',boundary_segments:[
+    {id:'s1',kind:'horizontal'},{id:'s2',kind:'vertical'},{id:'s3',kind:'horizontal'},{id:'s4',kind:'vertical'},
+  ],corner_radii:[]},features:[]}],
+};
+linkExplicitDimensionTargets(sharedHeight);
+assert.equal(sharedHeight.parts[0].profile.boundary_segments[1].dimension_id,'height');
+assert.equal(sharedHeight.parts[0].profile.boundary_segments[3].dimension_id,'height');
+
+// Live-site regression: a position targeted at f3 must never be retained by
+// f2, even if the model copied the same id and numeric value onto both.
+const ownedPosition={
+  dimensions:[{id:'slot-y',raw_text:'300 FROM BOTTOM',value:300,role:'position',reference:'edge',from_edge:'bottom',target:'p1.features.f3.y',confidence:'high'}],
+  parts:[{id:'p1',profile:{type:'rectangle',boundary_segments:[],corner_radii:[]},features:[
+    {id:'f1',type:'rectangular_cutout'},
+    {id:'f2',type:'circular_hole',y_mm:300,y_dimension_id:'slot-y'},
+    {id:'f3',type:'slot',y_mm:300,y_dimension_id:'slot-y'},
+  ]}],
+};
+linkExplicitDimensionTargets(ownedPosition);
+assert.equal(ownedPosition.parts[0].features[1].y_dimension_id,null);
+assert.equal(ownedPosition.parts[0].features[1].y_mm,null);
+assert.equal(ownedPosition.parts[0].features[2].y_dimension_id,'slot-y');
 assert.ok(segmentSchema.properties.kind.enum.includes('quarter_arc'));
 assert.ok(segmentSchema.properties.kind.enum.includes('connect_arc'));
 

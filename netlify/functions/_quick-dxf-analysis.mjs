@@ -65,6 +65,84 @@ profile.properties.corner_radii = {
 if (!profile.required.includes('corner_radii')) profile.required.push('corner_radii');
 
 function normalise(value){return String(value||'').trim().toLowerCase().replace(/[_-]+/g,' ').replace(/\s+/g,' ');}
+const FEATURE_DIMENSION_FIELDS=['width','height','diameter','radius','x','y','depth','offset'];
+const CORNERS=['bottom-left','bottom-right','top-right','top-left'];
+
+function targetFeatureIndex(target,part,prefix){
+  const remainder=String(target||'').slice(prefix.length+1);
+  const match=remainder.match(/^features?\.([^.]+)\./i);if(!match)return-1;
+  const token=normalise(match[1]);
+  return (part.features||[]).findIndex((feature,index)=>[feature?.id,`f${index+1}`,String(index+1)].map(normalise).includes(token));
+}
+
+function enforceFeatureDimensionOwnership(extraction){
+  const parts=Array.isArray(extraction?.parts)?extraction.parts:[];
+  for(const dimension of extraction?.dimensions||[]){
+    const target=String(dimension?.target||'').trim(),found=partForTarget(parts,target.toLowerCase());
+    if(!found||!dimension?.id)continue;
+    const ownerIndex=targetFeatureIndex(target,found.part,found.prefix);if(ownerIndex<0)continue;
+    for(const [index,feature] of (found.part.features||[]).entries()){
+      if(index===ownerIndex)continue;
+      for(const field of FEATURE_DIMENSION_FIELDS){
+        if(feature?.[`${field}_dimension_id`]!==dimension.id)continue;
+        feature[`${field}_dimension_id`]=null;
+        // A value copied from a dimension explicitly targeted at another
+        // feature is not a safe derived value. Keep the slot unresolved.
+        if(Number(feature[`${field}_mm`])===Number(dimension.value))feature[`${field}_mm`]=null;
+      }
+    }
+  }
+}
+
+function linkRepeatedCornerRadii(extraction){
+  const dimensions=Array.isArray(extraction?.dimensions)?extraction.dimensions:[];
+  for(const [partIndex,part] of (extraction?.parts||[]).entries()){
+    if(part?.profile?.type!=='rectangle')continue;
+    const typical=dimensions.filter((dimension)=>Number(dimension?.value)>0&&dimension.role==='radius'
+      &&/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.raw_text||''} ${dimension.target||''}`)
+      && (!dimension.target||new RegExp(`^(?:${String(part.id||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}|p${partIndex+1})\\.profile`,'i').test(dimension.target)));
+    if(typical.length!==1)continue;
+    const dimension=typical[0],existing=new Map((part.profile.corner_radii||[]).map((item)=>[item.corner,item]));
+    part.profile.corner_radii ||= [];
+    for(const corner of CORNERS){
+      let spec=existing.get(corner);
+      if(!spec){spec={corner,radius_mm:Number(dimension.value),radius_dimension_id:dimension.id};part.profile.corner_radii.push(spec);}
+      else if(!spec.radius_dimension_id||!(Number(spec.radius_mm)>0)){spec.radius_mm=Number(dimension.value);spec.radius_dimension_id=dimension.id;}
+    }
+  }
+}
+
+function linkUnambiguousArcConstraints(extraction){
+  const dimensions=Array.isArray(extraction?.dimensions)?extraction.dimensions:[];
+  for(const [partIndex,part] of (extraction?.parts||[]).entries())for(const [segmentIndex,segment] of (part?.profile?.boundary_segments||[]).entries()){
+    if(!['arc','connect_arc','quarter_arc'].includes(segment?.kind))continue;
+    if(!segment.radius_dimension_id){
+      const segmentTokens=normalise(`${segment.id||''} ${segment.label||''}`).split(' ').filter((x)=>x.length>2);
+      const candidates=dimensions.filter((dimension)=>Number(dimension?.value)>0&&(dimension.role==='radius'||/^\s*R\s*\d/i.test(dimension.raw_text||'')))
+        .filter((dimension)=>{
+          const text=normalise(`${dimension.target||''} ${dimension.raw_text||''}`);
+          if(new RegExp(`(?:segments?|boundary)\\.(?:${String(segment.id||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}|s${segmentIndex+1})(?:\\.|$)`,'i').test(dimension.target||''))return true;
+          return segmentTokens.filter((token)=>text.includes(token)).length>=2;
+        });
+      if(candidates.length===1){segment.radius_dimension_id=candidates[0].id;segment.radius_mm=Number(candidates[0].value);}
+    }
+  }
+}
+
+function linkCompoundSegmentTargets(extraction){
+  const parts=Array.isArray(extraction?.parts)?extraction.parts:[];
+  for(const dimension of extraction?.dimensions||[]){
+    const target=String(dimension?.target||''),found=partForTarget(parts,target.toLowerCase());
+    if(!found||!dimension?.id||!(Number(dimension.value)>0))continue;
+    const remainder=target.slice(found.prefix.length+1),segments=found.part.profile?.boundary_segments||[];
+    for(const match of remainder.matchAll(/(?:segments?|boundary)\.([^.\s]+)(?:\.(length))?/ig)){
+      for(const rawToken of match[1].split('/')){
+        const token=normalise(rawToken),segment=segments.find((item,index)=>[item?.id,`s${index+1}`,String(index+1)].map(normalise).includes(token));
+        if(segment&&['horizontal','vertical'].includes(segment.kind)){segment.dimension_id=dimension.id;segment.length_mm=Number(dimension.value);}
+      }
+    }
+  }
+}
 
 function boundaryLinkScore(segment, dimension){
   const segmentText=normalise(`${segment?.id||''} ${segment?.label||''}`);
@@ -140,7 +218,7 @@ export function linkExplicitDimensionTargets(extraction){
       const token=normalise(segmentMatch[1]),field=normalise(segmentMatch[2]||'length');
       const candidate=(part.profile?.boundary_segments||[]).find((item,index)=>[item?.id,`s${index+1}`,String(index+1)].map(normalise).includes(token));
       if(candidate){
-        if(field==='radius'){candidate.radius_dimension_id=dimension.id;candidate.radius_mm=Number(dimension.value);}
+        if(field==='radius'){candidate.dimension_id=null;candidate.length_mm=null;candidate.radius_dimension_id=dimension.id;candidate.radius_mm=Number(dimension.value);}
         else if(field==='chord'){candidate.chord_dimension_id=dimension.id;candidate.chord_mm=Number(dimension.value);}
         else if(field==='rise'||field==='sagitta'){candidate.rise_dimension_id=dimension.id;candidate.rise_mm=Number(dimension.value);}
         else {candidate.dimension_id=dimension.id;candidate.length_mm=Number(dimension.value);}
@@ -154,6 +232,10 @@ export function linkExplicitDimensionTargets(extraction){
       if(candidate){candidate.radius_dimension_id=dimension.id;candidate.radius_mm=Number(dimension.value);}
     }
   }
+  linkCompoundSegmentTargets(extraction);
+  linkUnambiguousArcConstraints(extraction);
+  linkRepeatedCornerRadii(extraction);
+  enforceFeatureDimensionOwnership(extraction);
   return extraction;
 }
 

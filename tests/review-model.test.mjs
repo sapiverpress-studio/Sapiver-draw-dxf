@@ -95,5 +95,71 @@ assert.equal(derivedHeight.confidence,'derived');
 assert.equal(derivedHeight.confirmed,false,'calculated manufacturing values still require human confirmation');
 assert.equal(reviewStats(derivedSlotSource).missing,1,'the genuinely absent Y position must remain the only requested value');
 
+const positionOwnershipSource={
+  analysis:{parts:[{id:'p1',label:'Stepped panel',profile:{type:'path',boundary_segments:[]},features:[
+    {id:'f1',type:'rectangular_cutout',width_mm:100,height_mm:50,width_dimension_id:'w1',height_dimension_id:'h1',x_mm:100,y_mm:100,x_dimension_id:'x1',y_dimension_id:'y1',x_reference:'edge',x_from_edge:'left',y_reference:'edge',y_from_edge:'bottom'},
+    {id:'f2',type:'circular_hole',diameter_mm:28,diameter_dimension_id:'dia',x_mm:220,x_dimension_id:'hx',y_mm:300,y_dimension_id:'slot-y',x_reference:'centre',x_from_edge:'left',y_reference:'edge',y_from_edge:'bottom'},
+    {id:'f3',type:'slot',width_mm:120,height_mm:32,width_dimension_id:'sw',height_dimension_id:'sh',x_mm:260,x_dimension_id:'sx',y_mm:300,y_dimension_id:'slot-y',x_reference:'edge',x_from_edge:'right',y_reference:'edge',y_from_edge:'bottom'},
+  ]}]},
+  dimensions:[
+    {id:'slot-y',label:'p1.features.f3.y',valueMm:300,role:'position',reference:'edge',fromEdge:'bottom',confirmed:false},
+  ],
+};
+repairGeometryLinks(positionOwnershipSource);
+assert.equal(positionOwnershipSource.analysis.parts[0].features[1].y_dimension_id,null,'a slot position must not be assigned to the preceding hole');
+assert.equal(positionOwnershipSource.analysis.parts[0].features[1].y_mm,null,'the borrowed hole position must remain explicitly unresolved');
+assert.equal(positionOwnershipSource.analysis.parts[0].features[2].y_dimension_id,'slot-y');
+repairGeometryLinks(positionOwnershipSource);
+assert.equal(positionOwnershipSource.analysis.parts[0].features[1].y_dimension_id,null,'feature ownership must survive later UI rerenders');
+assert.equal(positionOwnershipSource.dimensions[0].analysisTarget,'p1.features.f3.y');
+
+const savedArchSource={
+  analysis:{parts:[{id:'p1',label:'Arch top panel',profile:{type:'path',boundary_segments:[
+    {id:'s1',label:'Left side',kind:'vertical',dimension_id:'left',length_mm:400},
+    {id:'s2',label:'Bottom',kind:'horizontal',dimension_id:'bottom',length_mm:1200},
+    {id:'s3',label:'Right side',kind:'vertical',dimension_id:'right',length_mm:400},
+    {id:'s4',label:'R600 arched top',kind:'connect_arc',radius_dimension_id:null,radius_mm:null,rise_dimension_id:null,rise_mm:null},
+  ]},features:[]}]},
+  dimensions:[
+    {id:'left',label:'Left side',valueMm:400,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'bottom',label:'Bottom',valueMm:1200,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'right',label:'Right side',valueMm:400,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'radius',label:'R600 arched top closing radius',rawText:'R600',valueMm:600,role:'radius',reference:'size',fromEdge:'unknown',confirmed:false},
+  ],
+};
+repairGeometryLinks(savedArchSource);
+assert.equal(savedArchSource.analysis.parts[0].profile.boundary_segments[3].radius_dimension_id,'radius','saved analyses must repair a uniquely named radius without re-analysis');
+
+const typicalRadiusSource={
+  analysis:{parts:[{id:'p1',label:'Rounded panel',profile:{type:'rectangle',width_mm:900,height_mm:500,width_dimension_id:'rw',height_dimension_id:'rh',corner_radii:[]},features:[]}]},
+  dimensions:[
+    {id:'rw',label:'Overall width',valueMm:900,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'rh',label:'Overall height',valueMm:500,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'rr',label:'p1.profile corner radius R100 TYP',rawText:'R100 TYP',valueMm:100,role:'radius',reference:'size',fromEdge:'unknown',confirmed:false},
+  ],
+};
+repairGeometryLinks(typicalRadiusSource);
+assert.deepEqual(typicalRadiusSource.analysis.parts[0].profile.corner_radii.map((item)=>item.corner),['bottom-left','bottom-right','top-right','top-left']);
+assert.ok(typicalRadiusSource.analysis.parts[0].profile.corner_radii.every((item)=>item.radius_dimension_id==='rr'),'a typical radius must populate all four rectangle corners');
+
+const straightPathSource={
+  analysis:{parts:[{id:'p1',label:'Stepped outline',profile:{type:'path',boundary_segments:[
+    {id:'s1',label:'Bottom edge',kind:'horizontal',direction:'right',dimension_id:'pw',length_mm:1000},
+    {id:'s2',label:'Right side',kind:'vertical',direction:'up',dimension_id:'ph',length_mm:500},
+    {id:'s3',label:'Top edge',kind:'horizontal',direction:'left',dimension_id:'pw',length_mm:1000},
+    {id:'s4',label:'Left closing side',kind:'connect',direction:'connect'},
+  ]},features:[]}]},
+  dimensions:[
+    {id:'pw',label:'Overall width',valueMm:1000,role:'overall',reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'ph',label:'Overall height',valueMm:500,role:'overall',reference:'size',fromEdge:'unknown',confirmed:true},
+  ],
+};
+repairGeometryLinks(straightPathSource);
+const straightGeometry=compileSourceGeometry(straightPathSource);
+assert.equal(straightGeometry.ok,true,straightGeometry.errors?.join('\n'));
+const straightSvg=reviewDrawingSvg(straightPathSource);
+assert.doesNotMatch(straightSvg,/Confirm overall width and height|awaiting confirmation/i,'a confirmed straight path must render its measured outline');
+assert.match(straightSvg,/<path|<polyline|<polygon/);
+
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

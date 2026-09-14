@@ -125,8 +125,20 @@ function compatibleRole(slot, dimension) {
   return ['overall', 'size', 'diameter', 'radius', 'unknown'].includes(role);
 }
 
+function explicitlyTargetedFeatureIndex(dimension,part,partIndex){
+  const label=String(dimension?.analysisTarget||dimension?.label||'');
+  const partMatch=label.match(/^p(\d+)\.features?\.([^.]+)\./i);
+  if(!partMatch||Number(partMatch[1])!==partIndex+1)return null;
+  const token=String(partMatch[2]).toLowerCase();
+  const numbered=token.match(/^f?(\d+)$/);
+  if(numbered)return Number(numbered[1])-1;
+  const index=(part?.features||[]).findIndex((feature)=>String(feature?.id||'').toLowerCase()===token);
+  return index>=0?index:null;
+}
+
 function applySlotSemantics(source, slot, dimension) {
   if (!dimension) return;
+  if(!dimension.analysisTarget&&/^p\d+[.]/i.test(dimension.label||''))dimension.analysisTarget=dimension.label;
   dimension.label = slot.label;
   if (slot.kind === 'size') {
     dimension.reference = 'size';
@@ -265,10 +277,18 @@ export function repairGeometryLinks(source) {
   for (const slot of slots) {
     const owner = slotOwner(source, slot);
     if (!owner) continue;
+    const part=source.analysis.parts?.[slot.partIndex];
     const proposal = Number(owner[slot.valueField]);
     const currentId = owner[slot.field];
     const current = currentId ? byId.get(currentId) : null;
-    const currentMatches = current && (!finitePositive(proposal) || nearlyEqual(current.valueMm, proposal));
+    const explicitFeature=current&&slot.ownerType==='feature'?explicitlyTargetedFeatureIndex(current,part,slot.partIndex):null;
+    const currentMatches = current && (explicitFeature==null||explicitFeature===slot.featureIndex) && (!finitePositive(proposal) || nearlyEqual(current.valueMm, proposal));
+
+    if(current&&explicitFeature!=null&&explicitFeature!==slot.featureIndex){
+      owner[slot.field]=null;
+      if(finitePositive(proposal)&&nearlyEqual(proposal,current.valueMm))owner[slot.valueField]=null;
+      continue;
+    }
 
     if (current && currentMatches && !claimed.has(current.id)) {
       claimed.add(current.id);
@@ -279,6 +299,8 @@ export function repairGeometryLinks(source) {
     if (finitePositive(proposal)) {
       const candidates = dimensions.filter((d) => {
         if (claimed.has(d.id) || !finitePositive(d.valueMm) || !nearlyEqual(d.valueMm, proposal) || !compatibleRole(slot, d)) return false;
+        const targeted=slot.ownerType==='feature'?explicitlyTargetedFeatureIndex(d,part,slot.partIndex):null;
+        if(targeted!=null&&targeted!==slot.featureIndex)return false;
         if (slot.kind !== 'position' || d.fromEdge === 'unknown') return true;
         const allowed = slot.axis === 'x' ? ['left', 'right'] : ['top', 'bottom'];
         return allowed.includes(d.fromEdge);
@@ -293,7 +315,11 @@ export function repairGeometryLinks(source) {
 
     if (!current) {
       const ranked = dimensions
-        .filter((d) => !claimed.has(d.id) && finitePositive(d.valueMm) && compatibleRole(slot, d))
+        .filter((d) => {
+          if(claimed.has(d.id)||!finitePositive(d.valueMm)||!compatibleRole(slot,d))return false;
+          const targeted=slot.ownerType==='feature'?explicitlyTargetedFeatureIndex(d,part,slot.partIndex):null;
+          return targeted==null||targeted===slot.featureIndex;
+        })
         .map((d) => ({ dimension:d, score:semanticScore(slot, d) }))
         .sort((a, b) => b.score - a.score);
       if (ranked[0]?.score >= 4 && (!ranked[1] || ranked[0].score - ranked[1].score >= 2)) {

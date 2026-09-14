@@ -1084,7 +1084,6 @@ function renderDimensions() {
 
   repairGeometryLinks(source);
   const index = state.sources.indexOf(source);
-  const stats = reviewStats(source);
   els.activeSourceTitle.textContent = `${drawingLabel(source, index)} · ${source.name}`;
   els.analyseBtn.textContent=source.analysis?'Analyse again':'Analyse drawing';
   const pageInfo = source.pageCount > 1 ? ` · ${source.pageCount} PDF pages` : '';
@@ -1092,6 +1091,7 @@ function renderDimensions() {
   if (source.previewUrl) { els.drawingPreview.src = source.previewUrl; els.drawingPreview.hidden = false; els.drawingPlaceholder.hidden = true; }
   else { els.drawingPreview.hidden = true; els.drawingPlaceholder.hidden = false; els.drawingPlaceholder.textContent = source.kind === 'manual' ? 'Measurements entered manually' : 'Source preview unavailable'; }
   renderDigitalDrawing(source);
+  const stats = reviewStats(source);
 
   if (source.analysisStatus === 'error') els.aiState.textContent = `Analysis/upload error: ${source.error || 'unknown error'}`;
   else if (source.analysisStatus === 'uploading') els.aiState.textContent = 'Uploading to shared job…';

@@ -354,8 +354,8 @@ function compilePart(part, dimensionMap, errors) {
     const pathErrorCount=errors.length;
     const segments=profileSpec.boundary_segments||[];
     const connectIndexes=segments.map((segment,index)=>segment.kind==='connect'?index:-1).filter((index)=>index>=0);
-    if (segments.length<3 || connectIndexes.length!==1) {
-      errors.push(`${label}: a measured perimeter path requires at least three segments and exactly one calculated closing segment.`);
+    if (segments.length<3 || connectIndexes.length>1) {
+      errors.push(`${label}: a measured perimeter path requires at least three segments and no more than one calculated closing segment.`);
       return null;
     }
     const vectors=[];
@@ -373,9 +373,17 @@ function compilePart(part, dimensionMap, errors) {
     }
     if (errors.length>pathErrorCount) return null;
     const known=vectors.filter(Boolean).reduce((sum,vector)=>[sum[0]+vector[0],sum[1]+vector[1]],[0,0]);
-    vectors[connectIndexes[0]]=[-known[0],-known[1]];
-    if (Math.hypot(...vectors[connectIndexes[0]])<EPS) {
-      errors.push(`${label}: calculated closing perimeter segment has zero length.`);
+    if (connectIndexes.length===1) {
+      vectors[connectIndexes[0]]=[-known[0],-known[1]];
+      if (Math.hypot(...vectors[connectIndexes[0]])<EPS) {
+        errors.push(`${label}: calculated closing perimeter segment has zero length.`);
+        return null;
+      }
+    } else if (Math.hypot(...known)>EPS) {
+      const offsets=[];
+      if(Math.abs(known[0])>EPS)offsets.push(`${Math.abs(known[0]).toFixed(2).replace(/\.00$/,'')} mm horizontally`);
+      if(Math.abs(known[1])>EPS)offsets.push(`${Math.abs(known[1]).toFixed(2).replace(/\.00$/,'')} mm vertically`);
+      errors.push(`${label}: measured perimeter does not close by ${offsets.join(' and ')}. Correct the conflicting dimensions before DXF release.`);
       return null;
     }
     const raw=[point(0,0)];

@@ -266,6 +266,29 @@ function pendingCurveSvg(source){
   const part=(source?.analysis?.parts||[]).find(hasCurvePart),label=partName(part||{},0);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" role="img" aria-label="Curved drawing awaiting confirmation"><rect width="100%" height="100%" fill="white"/><text x="40" y="42" font-family="system-ui,sans-serif" font-size="17" font-weight="700" fill="#101828">${String(label).replace(/[&<>]/g,'')}</text><path d="M180 300 L180 155 Q450 40 720 155 L720 300 Z" fill="none" stroke="#98a2b3" stroke-width="2" stroke-dasharray="8 6"/><text x="450" y="350" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#667085">Confirm the perimeter dimensions and radii to render the measured curve.</text></svg>`;
 }
+function closeNearMeasuredPathsForPreview(source,tolerance=2.01){
+  const dimensions=new Map((source?.dimensions||[]).map((dimension)=>[dimension.id,dimension]));
+  for(const part of source?.analysis?.parts||[]){
+    const segments=part?.profile?.type==='path'?part.profile.boundary_segments||[]:[];
+    if(segments.length<3||segments.some((segment)=>['connect','connect_arc'].includes(segment.kind)))continue;
+    if(segments.some((segment)=>!['horizontal','vertical'].includes(segment.kind)))continue;
+    const vectors=segments.map((segment)=>{
+      const length=Number(dimensions.get(segment.dimension_id)?.valueMm||segment.length_mm);
+      if(!(length>0))return null;
+      return {right:[length,0],left:[-length,0],up:[0,length],down:[0,-length]}[segment.direction]||null;
+    });
+    if(vectors.some((vector)=>!vector))continue;
+    const last=segments.at(-1),actual=vectors.at(-1);
+    const before=vectors.slice(0,-1).reduce((sum,vector)=>[sum[0]+vector[0],sum[1]+vector[1]],[0,0]);
+    const expected=[-before[0],-before[1]];
+    const axisMatches=last.kind==='horizontal'
+      ? Math.abs(expected[1])<0.01&&Math.sign(expected[0])===Math.sign(actual[0])
+      : Math.abs(expected[0])<0.01&&Math.sign(expected[1])===Math.sign(actual[1]);
+    const difference=Math.hypot(expected[0]-actual[0],expected[1]-actual[1]);
+    if(!axisMatches||difference<=0.01||difference>tolerance)continue;
+    last.kind='connect';last.direction='connect';last.dimension_id=null;last.length_mm=null;
+  }
+}
 function progressiveCurveSvg(source,slots){
   const proposal=structuredClone(source);
   for(const dimension of proposal.dimensions||[])if(finitePositive(dimension.valueMm))dimension.confirmed=true;
@@ -285,6 +308,7 @@ function progressiveCurveSvg(source,slots){
       if(!['polished','unpolished'].includes(feature.cutout_finish))feature.cutout_finish='unpolished';
     }
   }
+  closeNearMeasuredPathsForPreview(proposal);
   const geometry=compileSourceGeometry(proposal);
   if(!geometry.parts?.length)return '';
   const normal=(value)=>String(value||'').trim().toLowerCase();

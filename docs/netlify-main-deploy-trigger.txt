@@ -1,2 +1,2 @@
-Deploy main after renderer fix and regression suite success.
-2026-09-14T06:09:00Z
+Deploy main with restored site access keypad.
+2026-09-14T08:00:00Z

@@ -202,5 +202,37 @@ assert.equal(chordDimension.valueMm,600,'a semicircular chord must be deduced as
 assert.equal(chordDimension.confidence,'derived');
 assert.doesNotMatch(reviewDrawingSvg(semicircleDeductionSource),/aria-label="Curved drawing awaiting confirmation"/i,'a deduced semicircular chord must allow the outer profile to render progressively');
 
+const sharedAggregateSource={
+  analysis:{parts:[{id:'p1',label:'Panel with shared overall dimensions',profile:{
+    type:'path',width_dimension_id:'d1',width_mm:1800,top_dimension_id:'d1',top_mm:1800,
+    height_dimension_id:'d2',height_mm:800,left_dimension_id:'d2',left_mm:800,right_dimension_id:'d2',right_mm:800,
+    boundary_segments:[
+      {id:'s1',label:'Left outer side',kind:'vertical',direction:'up',dimension_id:null,length_mm:null},
+      {id:'s2',label:'Top outer edge',kind:'horizontal',direction:'right',dimension_id:null,length_mm:null},
+      {id:'s3',label:'Right outer side between the same overall top and bottom levels',kind:'vertical',direction:'down',dimension_id:null,length_mm:null},
+      {id:'s4',label:'Bottom closing edge',kind:'connect',direction:'connect'},
+    ],
+  },features:[
+    {id:'f1',type:'circular_hole',diameter_mm:50,diameter_dimension_id:'d3',x_mm:200,x_dimension_id:'d4',x_reference:'centre',x_from_edge:'left',y_mm:null,y_dimension_id:null,y_reference:'unknown',y_from_edge:'unknown'},
+    {id:'f2',type:'circular_hole',diameter_mm:40,diameter_dimension_id:'d5',x_mm:200,x_dimension_id:'d6',x_reference:'centre',x_from_edge:'right',y_mm:null,y_dimension_id:null,y_reference:'unknown',y_from_edge:'unknown'},
+  ]}]},
+  dimensions:[
+    {id:'d1',label:'Overall width',valueMm:1800,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'d2',label:'Overall height',valueMm:800,role:'overall',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'d3',label:'Left hole diameter',valueMm:50,role:'diameter',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'d4',label:'Left hole X',valueMm:200,role:'position',reference:'centre',fromEdge:'left',confirmed:false},
+    {id:'d5',label:'Right hole diameter',valueMm:40,role:'diameter',reference:'size',fromEdge:'unknown',confirmed:false},
+    {id:'d6',label:'Right hole X',valueMm:200,role:'position',reference:'centre',fromEdge:'right',confirmed:false},
+  ],
+};
+materialiseDerivedDimensions(sharedAggregateSource);
+const aggregateSegments=sharedAggregateSource.analysis.parts[0].profile.boundary_segments;
+assert.equal(aggregateSegments[0].dimension_id,'d2','the profile left height must populate the matching left outer segment');
+assert.equal(aggregateSegments[1].dimension_id,'d1','the profile top width must populate the matching top outer segment');
+assert.equal(aggregateSegments[2].dimension_id,'d2','one overall height must populate the matching right outer segment too');
+assert.equal(aggregateSegments[2].length_mm,800);
+assert.equal(reviewStats(sharedAggregateSource).missing,2,'only the two genuinely absent hole Y positions should remain unresolved');
+assert.doesNotMatch(reviewDrawingSvg(sharedAggregateSource),/aria-label="Curved drawing awaiting confirmation"/i,'shared profile dimensions must permit a progressive outer render');
+
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

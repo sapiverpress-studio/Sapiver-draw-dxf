@@ -1,11 +1,12 @@
-name: Deploy Quick DXF prototype to Netlify
+name: Deploy Drawing Desk to Netlify
 
 on:
   push:
     branches:
-      - prototype-v1
+      - main
     paths:
-      - 'docs/netlify-branch-deploy-trigger.txt'
+      - 'docs/netlify-main-deploy-trigger.txt'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,9 +14,9 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
-      - name: Checkout prototype branch
+      - name: Checkout main
         uses: actions/checkout@v4
 
       - name: Set up Node
@@ -35,14 +36,22 @@ jobs:
       - name: Install function dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Build static publish directory
+      - name: Re-run critical renderer tests before production deploy
+        run: |
+          node tests/review-model.test.mjs
+          node tests/renderer-fix.test.mjs
+          node tests/curves-radii.test.mjs
+          node tests/access-auth.test.mjs
+
+      - name: Build production publish directory
         run: |
           rm -rf dist
-          mkdir -p dist/core
-          cp index.html styles.css job.css app-v4.js dist/
-          cp core/dxf.js core/geometry.js core/confirmation-pdf.js dist/core/
+          mkdir -p dist
+          cp index.html app-v5.js share-release.js review-stages.js dist/
+          cp styles.css job.css job-v4.css geometry-preview.css manufacturing-settings.css release-fixes.css halifax-glass.css dist/
+          cp -R assets core dist/
 
-      - name: Deploy prototype to existing Netlify production site
+      - name: Deploy current main to existing Netlify production site
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: 548a519d-04f8-4d5b-9b0d-13e2d5d0206d
@@ -53,4 +62,4 @@ jobs:
             --site="$NETLIFY_SITE_ID" \
             --auth="$NETLIFY_AUTH_TOKEN" \
             --prod \
-            --message="Quick DXF prototype-v1 controlled deploy"
+            --message="Drawing Desk controlled deploy from main"

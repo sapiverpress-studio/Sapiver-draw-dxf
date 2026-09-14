@@ -1,0 +1,28 @@
+name: Temporary live keypad verification
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/temporary-live-keypad-check.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Confirm unauthenticated visitor is locked out
+        run: |
+          access_body="$(curl --fail --silent --show-error https://sapiver-draw-dxf.netlify.app/.netlify/functions/access)"
+          echo "$access_body" | grep -q '"configured":true'
+          echo "$access_body" | grep -q '"authenticated":false'
+
+      - name: Confirm jobs endpoint rejects unauthenticated visitor
+        run: |
+          status="$(curl --silent --output /tmp/jobs-response.txt --write-out '%{http_code}' https://sapiver-draw-dxf.netlify.app/.netlify/functions/jobs)"
+          test "$status" = "401"
+          grep -q 'Login required' /tmp/jobs-response.txt

@@ -124,6 +124,7 @@ function curveCandidateScore(source,slot,dimension){
 }
 function repairCurveSlot(source,slot,dimensions){
   const owner=slotOwner(source,slot); if(!owner)return;
+  const profile=source?.analysis?.parts?.[slot.partIndex]?.profile||{};
   const byId=new Map(dimensions.map((d)=>[d.id,d]));
   let dimension=owner[slot.field]?byId.get(owner[slot.field]):null;
   if(!dimension&&finitePositive(owner[slot.valueField])){
@@ -139,23 +140,53 @@ function repairCurveSlot(source,slot,dimensions){
     }
   }
   if(dimension){
+    const aggregateIds=new Set([
+      profile.width_dimension_id,profile.height_dimension_id,
+      profile.left_dimension_id,profile.right_dimension_id,
+      profile.top_dimension_id,profile.bottom_dimension_id,
+    ].filter(Boolean));
+    const sharedAggregateLink=slot.ownerType==='segment'&&aggregateIds.has(dimension.id);
     const label=String(`${slot.label} ${dimension.label}`).toLowerCase();
     const straightSegment=slot.ownerType==='segment'&&['horizontal','vertical'].includes(owner.kind);
     const radiusOnStraight=straightSegment&&(dimension.role==='radius'||/\b(radius|rad)\b/.test(String(dimension.label||'').toLowerCase()));
     const ids=[owner?.id,slot.ownerType==='segment'?`s${slot.segmentIndex+1}`:null].filter(Boolean).map(escaped).join('|');
     const explicitlyTargetsOwner=Boolean(ids)&&new RegExp(`(?:^|[/.])(?:${ids})(?:[/.]|$)`,'i').test(dimension.analysisTarget||dimension.label||'');
     const repeatedRadius=slot.parameter==='radius'&&/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.rawText||''} ${dimension.analysisTarget||''}`);
-    const sideConflict=!explicitlyTargetsOwner&&!repeatedRadius&&(
+    const sideConflict=!sharedAggregateLink&&!explicitlyTargetsOwner&&!repeatedRadius&&(
       (/\bleft\b/.test(String(slot.label).toLowerCase())&&/\bright\b/.test(String(dimension.label).toLowerCase()))
       ||(/\bright\b/.test(String(slot.label).toLowerCase())&&/\bleft\b/.test(String(dimension.label).toLowerCase()))
     );
     if(radiusOnStraight||sideConflict){owner[slot.field]=null;owner[slot.valueField]=null;return;}
-    applySizeSemantics(slot,dimension);
+    if(sharedAggregateLink){
+      dimension.reference='size';dimension.fromEdge='unknown';
+      if(!dimension.role||dimension.role==='unknown')dimension.role='overall';
+    } else applySizeSemantics(slot,dimension);
+  }
+}
+function propagatePathAggregateDimensions(source){
+  const dimensions=new Map((source?.dimensions||[]).map((dimension)=>[dimension.id,dimension]));
+  for(const part of source?.analysis?.parts||[]){
+    const profile=part?.profile||{};
+    if(profile.type!=='path')continue;
+    for(const segment of profile.boundary_segments||[]){
+      if(segment.dimension_id||!['horizontal','vertical'].includes(segment.kind))continue;
+      const label=String(segment.label||'').toLowerCase();
+      let dimensionId=null;
+      if(segment.kind==='vertical'&&/\bleft\b/.test(label)&&/\b(outer|side)\b/.test(label)) dimensionId=profile.left_dimension_id||profile.height_dimension_id;
+      if(segment.kind==='vertical'&&/\bright\b/.test(label)&&/\b(outer|side)\b/.test(label)) dimensionId=profile.right_dimension_id||profile.height_dimension_id;
+      if(segment.kind==='horizontal'&&/\btop\b/.test(label)&&/\b(outer|side|edge)\b/.test(label)) dimensionId=profile.top_dimension_id||profile.width_dimension_id;
+      if(segment.kind==='horizontal'&&/\bbottom\b/.test(label)&&/\b(outer|side|edge)\b/.test(label)) dimensionId=profile.bottom_dimension_id||profile.width_dimension_id;
+      const dimension=dimensionId?dimensions.get(dimensionId):null;
+      if(!dimension||!finitePositive(dimension.valueMm))continue;
+      segment.dimension_id=dimension.id;
+      if(!finitePositive(segment.length_mm))segment.length_mm=Number(dimension.valueMm);
+    }
   }
 }
 export function repairGeometryLinks(source){
   expandTypicalCornerRadii(source);
   if(!hasCurveGeometry(source))return legacy.repairGeometryLinks(source);
+  propagatePathAggregateDimensions(source);
   const parts=source?.analysis?.parts||[],dimensions=source?.dimensions||[];
   parts.forEach((part)=>{
     if(hasCurvePart(part)){

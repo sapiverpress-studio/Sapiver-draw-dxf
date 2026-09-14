@@ -1055,9 +1055,11 @@ function renderSources() {
   state.sources.forEach((source, index) => {
     repairGeometryLinks(source);
     const stats = reviewStats(source);
+    const ready=sourceReady(source);
+    const shapeConflict=Boolean(stats.total&&stats.confirmed===stats.total&&!ready);
     const card = document.createElement('button'); card.type = 'button'; card.className = `source-card ${source.id === state.activeSourceId ? 'active' : ''}`;
-    const statusClass = source.analysisStatus === 'error' ? 'error' : ['uploading','analysing'].includes(source.analysisStatus) ? 'working' : sourceReady(source) ? 'ready' : '';
-    let status = sourceReady(source) ? 'Confirmed' : source.analysisStatus === 'uploading' ? 'Uploading…' : source.analysisStatus === 'analysing' ? 'AI analysing…' : source.analysisStatus === 'error' ? 'Error' : source.analysisStatus === 'awaiting' ? 'Awaiting AI' : `${stats.confirmed}/${stats.total} production confirmed`;
+    const statusClass = source.analysisStatus === 'error'||shapeConflict ? 'error' : ['uploading','analysing'].includes(source.analysisStatus) ? 'working' : ready ? 'ready' : '';
+    let status = ready ? 'Confirmed' : source.analysisStatus === 'uploading' ? 'Uploading…' : source.analysisStatus === 'analysing' ? 'AI analysing…' : source.analysisStatus === 'error' ? 'Error' : source.analysisStatus === 'awaiting' ? 'Awaiting AI' : shapeConflict ? `${stats.confirmed}/${stats.total} measurements confirmed · shape conflict` : `${stats.confirmed}/${stats.total} production confirmed`;
     card.innerHTML = `${source.previewUrl ? `<img src="${escapeHtml(source.previewUrl)}" alt="">` : `<span class="source-preview-placeholder">${source.kind === 'manual' ? 'MAN' : 'PDF'}</span>`}<span><strong>${drawingLabel(source, index)}</strong><small>${escapeHtml(source.name)}</small><em class="${statusClass}">${status}</em></span>`;
     card.addEventListener('click', () => { state.activeSourceId = source.id; render(); });
     if (!isFrozen()) {

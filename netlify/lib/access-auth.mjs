@@ -5,6 +5,11 @@ const SESSION_SECONDS = 12 * 60 * 60;
 const MAX_FAILURES = 5;
 const LOCK_SECONDS = 15 * 60;
 
+// Access code handling is retained for job deletion and can be restored for
+// site entry by changing this flag to true. It is deliberately unplugged
+// while Halifax Glass validates the drawing workflow.
+export const ACCESS_LOCK_ENABLED = false;
+
 function env(name) {
   return Netlify.env.get(name) || '';
 }
@@ -42,6 +47,7 @@ export function authConfigured() {
 }
 
 export function isAuthenticated(request) {
+  if (!ACCESS_LOCK_ENABLED) return true;
   if (!authConfigured()) return false;
   const [expiresText, signature] = cookieValue(request).split('.');
   const expires = Number(expiresText);

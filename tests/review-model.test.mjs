@@ -234,5 +234,19 @@ assert.equal(aggregateSegments[2].length_mm,800);
 assert.equal(reviewStats(sharedAggregateSource).missing,2,'only the two genuinely absent hole Y positions should remain unresolved');
 assert.doesNotMatch(reviewDrawingSvg(sharedAggregateSource),/aria-label="Curved drawing awaiting confirmation"/i,'shared profile dimensions must permit a progressive outer render');
 
+const multiTargetSource=structuredClone(sharedAggregateSource);
+const multiProfile=multiTargetSource.analysis.parts[0].profile;
+multiProfile.height_dimension_id=null;multiProfile.left_dimension_id=null;multiProfile.right_dimension_id=null;
+multiProfile.boundary_segments[0].dimension_id=null;multiProfile.boundary_segments[0].length_mm=null;
+multiProfile.boundary_segments[2].dimension_id=null;multiProfile.boundary_segments[2].length_mm=null;
+const sharedHeight=multiTargetSource.dimensions.find((dimension)=>dimension.id==='d2');
+sharedHeight.label='p1 full outer height; p1.profile.segments.s1.length and s3.length';
+sharedHeight.analysisTarget=sharedHeight.label;
+materialiseDerivedDimensions(multiTargetSource);
+assert.equal(multiProfile.boundary_segments[0].dimension_id,'d2','a multi-target dimension must link its first named segment');
+assert.equal(multiProfile.boundary_segments[2].dimension_id,'d2','a shorthand second segment target must reuse the same figured dimension');
+assert.equal(reviewStats(multiTargetSource).missing,2,'multi-target perimeter linking must leave only genuinely absent feature positions');
+assert.doesNotMatch(reviewDrawingSvg(multiTargetSource),/aria-label="Curved drawing awaiting confirmation"/i,'a multi-target overall height must permit the outline to render');
+
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

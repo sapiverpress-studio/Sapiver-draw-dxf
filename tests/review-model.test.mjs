@@ -248,5 +248,34 @@ assert.equal(multiProfile.boundary_segments[2].dimension_id,'d2','a shorthand se
 assert.equal(reviewStats(multiTargetSource).missing,2,'multi-target perimeter linking must leave only genuinely absent feature positions');
 assert.doesNotMatch(reviewDrawingSvg(multiTargetSource),/aria-label="Curved drawing awaiting confirmation"/i,'a multi-target overall height must permit the outline to render');
 
+const measuredStepSource={
+  analysis:{parts:[{id:'p1',label:'Stepped glass panel',profile:{type:'path',boundary_segments:[
+    {id:'s1',label:'Bottom edge',kind:'horizontal',direction:'right',dimension_id:'d1',length_mm:1018},
+    {id:'s2',label:'Right edge',kind:'vertical',direction:'up',dimension_id:'d2',length_mm:330},
+    {id:'s3',label:'Upper edge to step',kind:'horizontal',direction:'left',dimension_id:'d3',length_mm:915},
+    {id:'s4',label:'Step drop',kind:'vertical',direction:'down',dimension_id:'d4',length_mm:38},
+    {id:'s5',label:'Left step shoulder',kind:'horizontal',direction:'left',dimension_id:'d5',length_mm:103},
+    {id:'s6',label:'Left edge below shoulder',kind:'vertical',direction:'down',dimension_id:'d6',length_mm:291},
+  ]},features:[]}]},
+  dimensions:[
+    {id:'d1',label:'Bottom edge',valueMm:1018,role:'overall',reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'d2',label:'Right edge',valueMm:330,role:'overall',reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'d3',label:'Upper edge to step',valueMm:915,role:'size',reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'d4',label:'Step drop',valueMm:38,role:'size',reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'d5',label:'Left step shoulder',valueMm:103,role:'size',reference:'size',fromEdge:'unknown',confirmed:true},
+    {id:'d6',label:'Left edge below shoulder',valueMm:291,role:'size',reference:'size',fromEdge:'unknown',confirmed:true},
+  ],
+};
+const conflictingStepGeometry=compileSourceGeometry(structuredClone(measuredStepSource));
+assert.equal(conflictingStepGeometry.ok,false,'a 1 mm closure conflict must still block production DXF');
+assert.match(conflictingStepGeometry.errors.join('\n'),/does not close by 1 mm vertically/i,'the user must see the actual dimensional conflict');
+assert.doesNotMatch(reviewDrawingSvg(structuredClone(measuredStepSource)),/aria-label="Curved drawing awaiting confirmation"/i,'a near-closed measured step must still show its proposed outline');
+
+const closedStepSource=structuredClone(measuredStepSource);
+closedStepSource.dimensions.find((dimension)=>dimension.id==='d4').valueMm=39;
+const closedStepGeometry=compileSourceGeometry(closedStepSource);
+assert.equal(closedStepGeometry.ok,true,closedStepGeometry.errors?.join('\n'));
+assert.equal(closedStepGeometry.parts[0].profile.points.length,6,'a fully measured six-edge step must close without a synthetic connect segment');
+
 console.log('review-model tests passed');
 // Full demo-v5 suite rerun after null-slot guard.

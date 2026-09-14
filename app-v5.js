@@ -165,6 +165,7 @@ function mapDimension(raw, idx) {
   return {
     id: raw.id || id(),
     label: raw.target || raw.label || raw.description || `${role === 'overall' ? 'Overall' : 'Dimension'} ${idx + 1}`,
+    analysisTarget: raw.target || null,
     role,
     valueMm: Number.isFinite(value) && value > 0 ? value : null,
     reference,

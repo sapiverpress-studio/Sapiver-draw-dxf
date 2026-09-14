@@ -5,10 +5,9 @@ const SESSION_SECONDS = 12 * 60 * 60;
 const MAX_FAILURES = 5;
 const LOCK_SECONDS = 15 * 60;
 
-// Access code handling is retained for job deletion and can be restored for
-// site entry by changing this flag to true. It is deliberately unplugged
-// while Halifax Glass validates the drawing workflow.
-export const ACCESS_LOCK_ENABLED = false;
+// The site-entry keypad is enabled. The access code remains stored only in
+// Netlify's environment and is also used for protected job deletion.
+export const ACCESS_LOCK_ENABLED = true;
 
 function env(name) {
   return Netlify.env.get(name) || '';

@@ -95,7 +95,7 @@ export function slotByKey(source,key){if(!hasCurveGeometry(source))return legacy
 
 function applySizeSemantics(slot,dimension){
   if(!dimension)return;
-  if(!dimension.analysisTarget&&/^p\d+[.]/i.test(dimension.label||''))dimension.analysisTarget=dimension.label;
+  if(!dimension.analysisTarget&&/^p\d+\b/i.test(dimension.label||''))dimension.analysisTarget=dimension.label;
   dimension.label=slot.label; dimension.reference='size'; dimension.fromEdge='unknown';
   dimension.role=slot.parameter==='radius'?'radius':slot.parameter==='diameter'?'diameter':['profile','segment','corner-radius'].includes(slot.ownerType)?'overall':'size';
 }
@@ -106,7 +106,9 @@ function curveCandidateScore(source,slot,dimension){
   let score=0;
   if(slot.ownerType==='segment'){
     const ids=[owner?.id,`s${slot.segmentIndex+1}`].filter(Boolean).map(escaped).join('|');
-    if(new RegExp(`(?:segments?|boundary)\\.(?:${ids})(?:\\.${escaped(slot.parameter)}|\\.sagitta|[\\s/]|$)`,'i').test(label))score+=100;
+    const fullTarget=new RegExp(`(?:segments?|boundary)\\.(?:${ids})(?:\\.${escaped(slot.parameter)}|\\.sagitta|[\\s/]|$)`,'i');
+    const shorthandTarget=new RegExp(`(?:^|[^a-z0-9])(?:${ids})(?:[./\\s]|$)`,'i');
+    if(fullTarget.test(label)||shorthandTarget.test(label))score+=100;
   }
   if(slot.ownerType==='corner-radius'){
     const corner=escaped(owner?.corner||'');
@@ -150,7 +152,7 @@ function repairCurveSlot(source,slot,dimensions){
     const straightSegment=slot.ownerType==='segment'&&['horizontal','vertical'].includes(owner.kind);
     const radiusOnStraight=straightSegment&&(dimension.role==='radius'||/\b(radius|rad)\b/.test(String(dimension.label||'').toLowerCase()));
     const ids=[owner?.id,slot.ownerType==='segment'?`s${slot.segmentIndex+1}`:null].filter(Boolean).map(escaped).join('|');
-    const explicitlyTargetsOwner=Boolean(ids)&&new RegExp(`(?:^|[/.])(?:${ids})(?:[/.]|$)`,'i').test(dimension.analysisTarget||dimension.label||'');
+    const explicitlyTargetsOwner=Boolean(ids)&&new RegExp(`(?:^|[^a-z0-9])(?:${ids})(?:[./\\s]|$)`,'i').test(dimension.analysisTarget||dimension.label||'');
     const repeatedRadius=slot.parameter==='radius'&&/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.rawText||''} ${dimension.analysisTarget||''}`);
     const sideConflict=!sharedAggregateLink&&!explicitlyTargetsOwner&&!repeatedRadius&&(
       (/\bleft\b/.test(String(slot.label).toLowerCase())&&/\bright\b/.test(String(dimension.label).toLowerCase()))

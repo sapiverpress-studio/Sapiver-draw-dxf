@@ -160,7 +160,7 @@ export function inferDimensionIntent(value) {
   if (role === 'radius' || /^\s*R\s*\d/i.test(String(dimension?.rawText ?? dimension?.raw_text ?? text)) || /\b(radius|radii|rad)\b/i.test(text)) return 'radius';
   if (role === 'diameter' || /[Ø⌀]|\bdiam(?:eter)?\b/i.test(text)) return 'diameter';
   if (role === 'position') return 'position';
-  if (/\b(?:x|y)\s*(?:position|pos)\b|\bfrom\s+(?:left|right|top|bottom)\b/i.test(text)) return 'position';
+  if (!['overall', 'size'].includes(role) && /\b(?:x|y)\s*(?:position|pos)\b|\bfrom\s+(?:left|right|top|bottom)\b/i.test(text)) return 'position';
   if (/\bwidth\b/i.test(text)) return 'width';
   if (/\bheight\b/i.test(text)) return 'height';
   if (/\bdepth\b/i.test(text)) return 'depth';

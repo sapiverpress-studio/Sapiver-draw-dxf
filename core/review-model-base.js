@@ -1,0 +1,344 @@
+import * as legacy from './review-model-legacy.js';
+import { compileSourceGeometry, geometryToSvg } from './geometry.js';
+
+function finitePositive(value){return Number.isFinite(Number(value))&&Number(value)>0;}
+function nearlyEqual(a,b,tolerance=0.01){return Number.isFinite(Number(a))&&Number.isFinite(Number(b))&&Math.abs(Number(a)-Number(b))<=tolerance;}
+function partName(part,index){return String(part?.label||part?.id||`Part ${index+1}`).trim();}
+function hasCurvePart(part){
+  const profile=part?.profile||{};
+  return (profile.type==='rectangle'&&Array.isArray(profile.corner_radii)&&profile.corner_radii.length>0)
+    || (profile.type==='path'&&Array.isArray(profile.boundary_segments)&&profile.boundary_segments.length>0);
+}
+function hasRadiusedFeature(part){return (part?.features||[]).some((feature)=>['rectangular_cutout','corner_notch','edge_notch'].includes(feature?.type)&&(finitePositive(feature?.radius_mm)||Boolean(feature?.radius_dimension_id)));}
+function hasCurveGeometry(source){return (source?.analysis?.parts||[]).some((part)=>hasCurvePart(part)||hasRadiusedFeature(part));}
+
+const RECTANGLE_CORNERS=['bottom-left','bottom-right','top-right','top-left'];
+function expandTypicalCornerRadii(source){
+  const dimensions=source?.dimensions||[];
+  for(const [partIndex,part] of (source?.analysis?.parts||[]).entries()){
+    if(part?.profile?.type!=='rectangle')continue;
+    const candidates=dimensions.filter((dimension)=>finitePositive(dimension?.valueMm)
+      && (dimension.role==='radius'||/^\s*R\s*\d/i.test(dimension.rawText||''))
+      && /\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.rawText||''} ${dimension.label||''}`)
+      && (!/^p\d+[.]/i.test(dimension.label||'')||new RegExp(`^p${partIndex+1}[.]profile`,'i').test(dimension.label||'')));
+    if(candidates.length!==1)continue;
+    const dimension=candidates[0],byCorner=new Map((part.profile.corner_radii||[]).map((item)=>[item.corner,item]));
+    part.profile.corner_radii ||= [];
+    for(const corner of RECTANGLE_CORNERS){
+      const existing=byCorner.get(corner);
+      if(!existing)part.profile.corner_radii.push({corner,radius_mm:Number(dimension.valueMm),radius_dimension_id:dimension.id});
+      else if(!existing.radius_dimension_id||!finitePositive(existing.radius_mm)){
+        existing.radius_mm=Number(dimension.valueMm);existing.radius_dimension_id=dimension.id;
+      }
+    }
+  }
+}
+
+function curveProfileSlots(part,partIndex){
+  const slots=[],profile=part?.profile||{},common={partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'profile'};
+  if(profile.type==='rectangle'){
+    slots.push({...common,key:`p${partIndex}:profile:width`,parameter:'width',field:'width_dimension_id',valueField:'width_mm',kind:'size',label:'Overall width'});
+    slots.push({...common,key:`p${partIndex}:profile:height`,parameter:'height',field:'height_dimension_id',valueField:'height_mm',kind:'size',label:'Overall height'});
+    for(let index=0;index<(profile.corner_radii||[]).length;index++){
+      const radius=profile.corner_radii[index],name=String(radius.corner||'corner').replace('-', ' ');
+      slots.push({partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'corner-radius',cornerRadiusIndex:index,key:`p${partIndex}:profile:corner-radius:${index}`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${name[0]?.toUpperCase()||''}${name.slice(1)} radius`});
+    }
+  } else if(profile.type==='path'){
+    for(let index=0;index<(profile.boundary_segments||[]).length;index++){
+      const segment=profile.boundary_segments[index],base={partIndex,featureIndex:null,section:partName(part,partIndex),ownerType:'segment',segmentIndex:index};
+      if(segment.kind==='connect') continue;
+      if(segment.kind==='quarter_arc'){
+        slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter transition ${index+1}`} radius`});
+      } else if(segment.kind==='connect_arc'){
+        if(segment.radius_dimension_id||finitePositive(segment.radius_mm)||!segment.rise_dimension_id&&!finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
+        if(segment.rise_dimension_id||finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:rise`,parameter:'rise',field:'rise_dimension_id',valueField:'rise_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} rise`});
+      } else if(segment.kind==='arc'){
+        slots.push({...base,key:`p${partIndex}:profile:segment:${index}:chord`,parameter:'chord',field:'chord_dimension_id',valueField:'chord_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} chord`});
+        if(segment.radius_dimension_id||finitePositive(segment.radius_mm)||!segment.rise_dimension_id&&!finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:radius`,parameter:'radius',field:'radius_dimension_id',valueField:'radius_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} radius`});
+        if(segment.rise_dimension_id||finitePositive(segment.rise_mm)) slots.push({...base,key:`p${partIndex}:profile:segment:${index}:rise`,parameter:'rise',field:'rise_dimension_id',valueField:'rise_mm',kind:'size',label:`${segment.label||`Perimeter arc ${index+1}`} rise`});
+      } else {
+        slots.push({...base,key:`p${partIndex}:profile:segment:${index}`,parameter:'length',field:'dimension_id',valueField:'length_mm',kind:'size',label:segment.label||`Perimeter segment ${index+1}`});
+      }
+    }
+  }
+  return slots;
+}
+function legacyFeatureSlots(source,part,partIndex){
+  const isolated={...source,analysis:{...(source.analysis||{}),parts:[{...part,profile:{type:'unknown'},features:part.features||[]}]}};
+  return legacy.geometrySlots(isolated).filter((slot)=>slot.ownerType==='feature').map((slot)=>({...slot,partIndex}));
+}
+
+export function geometrySlots(source){
+  if(!hasCurveGeometry(source)) return legacy.geometrySlots(source);
+  const slots=[];
+  (source?.analysis?.parts||[]).forEach((part,partIndex)=>{
+    if(hasCurvePart(part)) slots.push(...curveProfileSlots(part,partIndex),...legacyFeatureSlots(source,part,partIndex));
+    else {
+      const isolated={...source,analysis:{...(source.analysis||{}),parts:[part]}};
+      slots.push(...legacy.geometrySlots(isolated).map((slot)=>({...slot,partIndex})));
+    }
+  });
+  return slots;
+}
+export function isPerimeterSlot(slot){return ['profile','segment','corner-radius'].includes(slot?.ownerType);}
+export function slotOwner(source,slot){
+  if(!hasCurveGeometry(source)) return legacy.slotOwner(source,slot);
+  if(!slot)return null; const part=source?.analysis?.parts?.[slot.partIndex]; if(!part)return null;
+  if(slot.ownerType==='profile')return part.profile;
+  if(slot.ownerType==='segment')return part.profile?.boundary_segments?.[slot.segmentIndex]||null;
+  if(slot.ownerType==='corner-radius')return part.profile?.corner_radii?.[slot.cornerRadiusIndex]||null;
+  return part.features?.[slot.featureIndex]||null;
+}
+export function slotDimensionId(source,slot){if(!hasCurveGeometry(source))return legacy.slotDimensionId(source,slot);return slotOwner(source,slot)?.[slot.field]||null;}
+export function setSlotDimensionId(source,slot,dimensionId){if(!hasCurveGeometry(source))return legacy.setSlotDimensionId(source,slot,dimensionId);const owner=slotOwner(source,slot);if(!owner)return false;owner[slot.field]=dimensionId||null;return true;}
+export function slotByKey(source,key){if(!hasCurveGeometry(source))return legacy.slotByKey(source,key);return geometrySlots(source).find((slot)=>slot.key===key)||null;}
+
+function applySizeSemantics(slot,dimension){
+  if(!dimension)return;
+  if(!dimension.analysisTarget&&/^p\d+\b/i.test(dimension.label||''))dimension.analysisTarget=dimension.label;
+  dimension.label=slot.label; dimension.reference='size'; dimension.fromEdge='unknown';
+  dimension.role=slot.parameter==='radius'?'radius':slot.parameter==='diameter'?'diameter':['profile','segment','corner-radius'].includes(slot.ownerType)?'overall':'size';
+}
+function words(value){return String(value||'').toLowerCase().replace(/[_-]+/g,' ').match(/[a-z0-9]+/g)||[];}
+function escaped(value){return String(value||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&');}
+function curveCandidateScore(source,slot,dimension){
+  const part=source?.analysis?.parts?.[slot.partIndex],owner=slotOwner(source,slot),label=String(dimension?.analysisTarget||dimension?.label||''),raw=String(dimension?.rawText||'');
+  let score=0;
+  if(slot.ownerType==='segment'){
+    const ids=[owner?.id,`s${slot.segmentIndex+1}`].filter(Boolean).map(escaped).join('|');
+    const fullTarget=new RegExp(`(?:segments?|boundary)\\.(?:${ids})(?:\\.${escaped(slot.parameter)}|\\.sagitta|[\\s/]|$)`,'i');
+    const shorthandTarget=new RegExp(`(?:^|[^a-z0-9])(?:${ids})(?:[./\\s]|$)`,'i');
+    if(fullTarget.test(label)||shorthandTarget.test(label))score+=100;
+  }
+  if(slot.ownerType==='corner-radius'){
+    const corner=escaped(owner?.corner||'');
+    if(new RegExp(`corner[_ .-]?radii\\.${corner}`,'i').test(label))score+=100;
+    if(/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${raw} ${label}`))score+=40;
+  }
+  if(slot.parameter==='radius'){
+    if(dimension.role==='radius')score+=10;
+    if(/^\s*R\s*\d/i.test(raw))score+=8;
+  }
+  const slotWords=new Set(words(`${slot.label} ${owner?.label||''}`).filter((word)=>word.length>2&&!['from','into','with','side'].includes(word)));
+  const dimensionWords=new Set(words(`${label} ${raw}`));
+  score+=[...slotWords].filter((word)=>dimensionWords.has(word)).length*3;
+  return score;
+}
+function repairCurveSlot(source,slot,dimensions){
+  const owner=slotOwner(source,slot); if(!owner)return;
+  const profile=source?.analysis?.parts?.[slot.partIndex]?.profile||{};
+  const byId=new Map(dimensions.map((d)=>[d.id,d]));
+  let dimension=owner[slot.field]?byId.get(owner[slot.field]):null;
+  if(!dimension&&finitePositive(owner[slot.valueField])){
+    const candidates=dimensions.filter((d)=>finitePositive(d.valueMm)&&nearlyEqual(d.valueMm,owner[slot.valueField]));
+    if(candidates.length===1){dimension=candidates[0];owner[slot.field]=dimension.id;}
+  }
+  if(!dimension&&['segment','corner-radius'].includes(slot.ownerType)){
+    const ranked=dimensions.filter((candidate)=>finitePositive(candidate.valueMm))
+      .map((candidate)=>({candidate,score:curveCandidateScore(source,slot,candidate)}))
+      .filter((item)=>item.score>=12).sort((a,b)=>b.score-a.score);
+    if(ranked.length&&(!ranked[1]||ranked[0].score>ranked[1].score||ranked[0].candidate.id===ranked[1].candidate.id)){
+      dimension=ranked[0].candidate;owner[slot.field]=dimension.id;owner[slot.valueField]=Number(dimension.valueMm);
+    }
+  }
+  if(dimension){
+    const aggregateIds=new Set([
+      profile.width_dimension_id,profile.height_dimension_id,
+      profile.left_dimension_id,profile.right_dimension_id,
+      profile.top_dimension_id,profile.bottom_dimension_id,
+    ].filter(Boolean));
+    const sharedAggregateLink=slot.ownerType==='segment'&&aggregateIds.has(dimension.id);
+    const label=String(`${slot.label} ${dimension.label}`).toLowerCase();
+    const straightSegment=slot.ownerType==='segment'&&['horizontal','vertical'].includes(owner.kind);
+    const radiusOnStraight=straightSegment&&(dimension.role==='radius'||/\b(radius|rad)\b/.test(String(dimension.label||'').toLowerCase()));
+    const ids=[owner?.id,slot.ownerType==='segment'?`s${slot.segmentIndex+1}`:null].filter(Boolean).map(escaped).join('|');
+    const explicitlyTargetsOwner=Boolean(ids)&&new RegExp(`(?:^|[^a-z0-9])(?:${ids})(?:[./\\s]|$)`,'i').test(dimension.analysisTarget||dimension.label||'');
+    const repeatedRadius=slot.parameter==='radius'&&/\b(typ|typical|all\s+corners|4\s*[x×])\b/i.test(`${dimension.rawText||''} ${dimension.analysisTarget||''}`);
+    const sideConflict=!sharedAggregateLink&&!explicitlyTargetsOwner&&!repeatedRadius&&(
+      (/\bleft\b/.test(String(slot.label).toLowerCase())&&/\bright\b/.test(String(dimension.label).toLowerCase()))
+      ||(/\bright\b/.test(String(slot.label).toLowerCase())&&/\bleft\b/.test(String(dimension.label).toLowerCase()))
+    );
+    if(radiusOnStraight||sideConflict){owner[slot.field]=null;owner[slot.valueField]=null;return;}
+    if(sharedAggregateLink){
+      dimension.reference='size';dimension.fromEdge='unknown';
+      if(!dimension.role||dimension.role==='unknown')dimension.role='overall';
+    } else applySizeSemantics(slot,dimension);
+  }
+}
+function propagatePathAggregateDimensions(source){
+  const dimensions=new Map((source?.dimensions||[]).map((dimension)=>[dimension.id,dimension]));
+  for(const part of source?.analysis?.parts||[]){
+    const profile=part?.profile||{};
+    if(profile.type!=='path')continue;
+    for(const segment of profile.boundary_segments||[]){
+      if(segment.dimension_id||!['horizontal','vertical'].includes(segment.kind))continue;
+      const label=String(segment.label||'').toLowerCase();
+      let dimensionId=null;
+      if(segment.kind==='vertical'&&/\bleft\b/.test(label)&&/\b(outer|side)\b/.test(label)) dimensionId=profile.left_dimension_id||profile.height_dimension_id;
+      if(segment.kind==='vertical'&&/\bright\b/.test(label)&&/\b(outer|side)\b/.test(label)) dimensionId=profile.right_dimension_id||profile.height_dimension_id;
+      if(segment.kind==='horizontal'&&/\btop\b/.test(label)&&/\b(outer|side|edge)\b/.test(label)) dimensionId=profile.top_dimension_id||profile.width_dimension_id;
+      if(segment.kind==='horizontal'&&/\bbottom\b/.test(label)&&/\b(outer|side|edge)\b/.test(label)) dimensionId=profile.bottom_dimension_id||profile.width_dimension_id;
+      const dimension=dimensionId?dimensions.get(dimensionId):null;
+      if(!dimension||!finitePositive(dimension.valueMm))continue;
+      segment.dimension_id=dimension.id;
+      if(!finitePositive(segment.length_mm))segment.length_mm=Number(dimension.valueMm);
+    }
+  }
+}
+export function repairGeometryLinks(source){
+  expandTypicalCornerRadii(source);
+  if(!hasCurveGeometry(source))return legacy.repairGeometryLinks(source);
+  propagatePathAggregateDimensions(source);
+  const parts=source?.analysis?.parts||[],dimensions=source?.dimensions||[];
+  parts.forEach((part)=>{
+    if(hasCurvePart(part)){
+      const isolated={...source,analysis:{...(source.analysis||{}),parts:[{...part,profile:{type:'unknown'},features:part.features||[]}]}};
+      legacy.repairGeometryLinks(isolated);
+    } else {
+      const isolated={...source,analysis:{...(source.analysis||{}),parts:[part]}}; legacy.repairGeometryLinks(isolated);
+    }
+  });
+  for(const slot of geometrySlots(source)) if(slot.ownerType!=='feature') repairCurveSlot(source,slot,dimensions);
+  return source;
+}
+function deriveFeatureValues(source){
+  for(const part of source?.analysis?.parts||[])for(const feature of part.features||[]){
+    const radius=Number(feature.radius_mm),width=Number(feature.width_mm),height=Number(feature.height_mm);
+    if(feature.type==='circular_hole'&&!(Number(feature.diameter_mm)>0)&&radius>0)feature.diameter_mm=radius*2;
+    if(feature.type!=='slot'||!(radius>0))continue;
+    const minor=radius*2;
+    if(!(height>0)&&width>minor)feature.height_mm=minor;
+    else if(!(width>0)&&height>minor)feature.width_mm=minor;
+  }
+}
+function deriveBoundaryValues(source){
+  for(const part of source?.analysis?.parts||[])for(const segment of part?.profile?.boundary_segments||[]){
+    if(segment.kind!=='arc'||finitePositive(segment.chord_mm))continue;
+    const radius=Number(segment.radius_mm),rise=Number(segment.rise_mm);
+    if(!(radius>0))continue;
+    if(segment.arc_extent==='semicircle')segment.chord_mm=radius*2;
+    else if(rise>0&&rise<=radius*2){
+      const halfChordSquared=2*radius*rise-rise*rise;
+      if(halfChordSquared>0)segment.chord_mm=2*Math.sqrt(halfChordSquared);
+    }
+  }
+}
+export function materialiseDerivedDimensions(source){
+  if(!source?.analysis)return source;
+  source.dimensions ||= [];
+  deriveFeatureValues(source);
+  deriveBoundaryValues(source);
+  repairGeometryLinks(source);
+  for(const slot of geometrySlots(source)){
+    if(dimensionForSlot(source,slot))continue;
+    const owner=slotOwner(source,slot),value=Number(owner?.[slot.valueField]);
+    if(!(value>0))continue;
+    const reference=slot.kind==='position'?owner?.[slot.referenceField]:'size';
+    const fromEdge=slot.kind==='position'?owner?.[slot.fromEdgeField]:'unknown';
+    const allowed=slot.axis==='x'?['left','right']:['top','bottom'];
+    if(slot.kind==='position'&&(!['centre','edge'].includes(reference)||!allowed.includes(fromEdge)))continue;
+    const dimension={
+      id:`derived:${slot.key}`,label:slot.label,valueMm:value,
+      role:slot.kind==='position'?'position':slot.parameter==='radius'?'radius':slot.parameter==='diameter'?'diameter':'size',
+      reference,fromEdge,rawText:'Calculated from analysed geometry',confidence:'derived',confirmed:false,
+    };
+    source.dimensions.push(dimension);setSlotDimensionId(source,slot,dimension.id);
+  }
+  repairGeometryLinks(source);return source;
+}
+export function dimensionForSlot(source,slot){if(!hasCurveGeometry(source))return legacy.dimensionForSlot(source,slot);const id=slotDimensionId(source,slot);return id?(source?.dimensions||[]).find((d)=>d.id===id)||null:null;}
+export function dimensionReadyForSlot(slot,dimension){
+  if(!slot||!(dimension?.confirmed&&finitePositive(dimension.valueMm)))return false;
+  if(slot.kind==='size')return dimension.reference==='size';
+  if(!['centre','edge'].includes(dimension.reference))return false;
+  const allowed=slot.axis==='x'?['left','right']:['top','bottom'];return allowed.includes(dimension.fromEdge);
+}
+export function reviewStats(source){
+  if(!hasCurveGeometry(source))return legacy.reviewStats(source);
+  const slots=geometrySlots(source);let linked=0,confirmed=0;
+  for(const slot of slots){const d=dimensionForSlot(source,slot);if(d)linked++;if(dimensionReadyForSlot(slot,d))confirmed++;}
+  return {total:slots.length,linked,confirmed,missing:Math.max(0,slots.length-linked),slots};
+}
+export function unlinkedDimensions(source){if(!hasCurveGeometry(source))return legacy.unlinkedDimensions(source);const linked=new Set(geometrySlots(source).map((slot)=>slotDimensionId(source,slot)).filter(Boolean));return (source?.dimensions||[]).filter((d)=>!linked.has(d.id));}
+export function unlinkDimension(source,dimensionId){if(!hasCurveGeometry(source))return legacy.unlinkDimension(source,dimensionId);for(const slot of geometrySlots(source))if(slotDimensionId(source,slot)===dimensionId)setSlotDimensionId(source,slot,null);}
+
+function pendingCurveSvg(source){
+  const part=(source?.analysis?.parts||[]).find(hasCurvePart),label=partName(part||{},0);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" role="img" aria-label="Curved drawing awaiting confirmation"><rect width="100%" height="100%" fill="white"/><text x="40" y="42" font-family="system-ui,sans-serif" font-size="17" font-weight="700" fill="#101828">${String(label).replace(/[&<>]/g,'')}</text><path d="M180 300 L180 155 Q450 40 720 155 L720 300 Z" fill="none" stroke="#98a2b3" stroke-width="2" stroke-dasharray="8 6"/><text x="450" y="350" text-anchor="middle" font-family="system-ui,sans-serif" font-size="14" fill="#667085">Confirm the perimeter dimensions and radii to render the measured curve.</text></svg>`;
+}
+function closeNearMeasuredPathsForPreview(source,tolerance=2.01){
+  const dimensions=new Map((source?.dimensions||[]).map((dimension)=>[dimension.id,dimension]));
+  for(const part of source?.analysis?.parts||[]){
+    const segments=part?.profile?.type==='path'?part.profile.boundary_segments||[]:[];
+    if(segments.length<3||segments.some((segment)=>['connect','connect_arc'].includes(segment.kind)))continue;
+    if(segments.some((segment)=>!['horizontal','vertical'].includes(segment.kind)))continue;
+    const vectors=segments.map((segment)=>{
+      const length=Number(dimensions.get(segment.dimension_id)?.valueMm||segment.length_mm);
+      if(!(length>0))return null;
+      return {right:[length,0],left:[-length,0],up:[0,length],down:[0,-length]}[segment.direction]||null;
+    });
+    if(vectors.some((vector)=>!vector))continue;
+    const last=segments.at(-1),actual=vectors.at(-1);
+    const before=vectors.slice(0,-1).reduce((sum,vector)=>[sum[0]+vector[0],sum[1]+vector[1]],[0,0]);
+    const expected=[-before[0],-before[1]];
+    const axisMatches=last.kind==='horizontal'
+      ? Math.abs(expected[1])<0.01&&Math.sign(expected[0])===Math.sign(actual[0])
+      : Math.abs(expected[0])<0.01&&Math.sign(expected[1])===Math.sign(actual[1]);
+    const difference=Math.hypot(expected[0]-actual[0],expected[1]-actual[1]);
+    if(!axisMatches||difference<=0.01||difference>tolerance)continue;
+    last.kind='connect';last.direction='connect';last.dimension_id=null;last.length_mm=null;
+  }
+}
+function progressiveCurveSvg(source,slots){
+  const proposal=structuredClone(source);
+  for(const dimension of proposal.dimensions||[])if(finitePositive(dimension.valueMm))dimension.confirmed=true;
+  for(const [partIndex,part] of (proposal.analysis?.parts||[]).entries()){
+    part.features=(part.features||[]).filter((feature,featureIndex)=>{
+      const featureSlots=slots.filter((slot)=>slot.partIndex===partIndex&&slot.featureIndex===featureIndex);
+      return featureSlots.length>0&&featureSlots.every((slot)=>{
+        const dimension=dimensionForSlot(proposal,slot);
+        if(!finitePositive(dimension?.valueMm))return false;
+        if(slot.kind!=='position')return true;
+        const allowed=slot.axis==='x'?['left','right']:['top','bottom'];
+        return ['centre','edge'].includes(dimension.reference)&&allowed.includes(dimension.fromEdge);
+      });
+    });
+    for(const feature of part.features){
+      feature.cutout_finish_confirmed=true;
+      if(!['polished','unpolished'].includes(feature.cutout_finish))feature.cutout_finish='unpolished';
+    }
+  }
+  closeNearMeasuredPathsForPreview(proposal);
+  const geometry=compileSourceGeometry(proposal);
+  if(!geometry.parts?.length)return '';
+  const normal=(value)=>String(value||'').trim().toLowerCase();
+  const ready=(slot)=>dimensionReadyForSlot(slot,dimensionForSlot(source,slot));
+  return geometryToSvg(geometry,{width:900,height:430,padding:42,entityState:(entity,compiledPart)=>{
+    const partIndex=(source.analysis?.parts||[]).findIndex((part)=>String(part.id||part.label)===String(compiledPart.id||compiledPart.label));
+    if(entity.featureId){
+      const featureIndex=source.analysis?.parts?.[partIndex]?.features?.findIndex((feature)=>String(feature.id)===String(entity.featureId));
+      const featureSlots=slots.filter((slot)=>slot.partIndex===partIndex&&slot.featureIndex===featureIndex);
+      return featureSlots.length&&featureSlots.every(ready)?'confirmed':'pending';
+    }
+    const segmentIndex=source.analysis?.parts?.[partIndex]?.profile?.boundary_segments?.findIndex((segment)=>normal(segment.label||segment.id)===normal(entity.label));
+    if(segmentIndex<0)return 'pending';
+    const segmentSlots=slots.filter((slot)=>slot.partIndex===partIndex&&slot.ownerType==='segment'&&slot.segmentIndex===segmentIndex);
+    if(!segmentSlots.length)return 'pending';
+    const segment=source.analysis.parts[partIndex].profile.boundary_segments[segmentIndex];
+    if(segment.kind==='connect_arc'){
+      const perimeterSlots=slots.filter((slot)=>slot.partIndex===partIndex&&isPerimeterSlot(slot));
+      return segmentSlots.every(ready)&&perimeterSlots.every(ready)?'confirmed':'pending';
+    }
+    return segmentSlots.every(ready)?'confirmed':'pending';
+  }});
+}
+export function reviewDrawingSvg(source){
+  if(!hasCurveGeometry(source))return legacy.reviewDrawingSvg(source);
+  repairGeometryLinks(source);const slots=geometrySlots(source);
+  if(slots.length&&slots.every((slot)=>dimensionReadyForSlot(slot,dimensionForSlot(source,slot)))){
+    const geometry=compileSourceGeometry(source);if(geometry.ok)return geometryToSvg(geometry,{width:900,height:430,padding:42});
+  }
+  const progressive=progressiveCurveSvg(source,slots);if(progressive)return progressive;
+  return pendingCurveSvg(source);
+}
+export function reviewDrawingDataUrl(source){if(!hasCurveGeometry(source))return legacy.reviewDrawingDataUrl(source);const svg=reviewDrawingSvg(source);return svg?`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`:'';}

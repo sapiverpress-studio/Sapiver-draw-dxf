@@ -1,0 +1,134 @@
+name: Analysis guard browser checks
+
+on:
+  push:
+    branches: [fix/repo-wide-analysis-geometry-guardrails]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check app-v5.js
+          node --check app-v5-base.js
+          node --check dimension-assignment-ui-guard.js
+          node --check core/analysis-integrity.js
+      - name: Install browser driver only
+        run: npm install --no-save --ignore-scripts puppeteer-core@24
+      - name: Verify explicit safe assignment in Chromium
+        run: |
+          python3 -m http.server 4173 >/tmp/quick-dxf-http.log 2>&1 &
+          cat > analysis-guard-browser.mjs <<'NODE'
+          import puppeteer from 'puppeteer-core';
+          import fs from 'node:fs';
+
+          const executablePath = ['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/usr/bin/chromium','/usr/bin/chromium-browser'].find(fs.existsSync);
+          if (!executablePath) throw new Error('No Chromium available');
+          const browser = await puppeteer.launch({ executablePath, headless:true, args:['--no-sandbox'] });
+          const page = await browser.newPage();
+          const pageErrors = [];
+          page.on('pageerror', (error) => pageErrors.push(String(error)));
+          await page.setRequestInterception(true);
+          page.on('request', (request) => {
+            const url = request.url();
+            if (url.includes('/.netlify/functions/access')) return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({configured:true, authenticated:true}) });
+            if (url.includes('/.netlify/functions/jobs')) {
+              if (request.method() === 'PUT') {
+                const job = JSON.parse(request.postData() || '{}');
+                return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({ok:true,job}) });
+              }
+              return request.respond({ status:200, contentType:'application/json', body:JSON.stringify({ok:true,jobs:[]}) });
+            }
+            return request.continue();
+          });
+
+          await page.goto('http://127.0.0.1:4173/', { waitUntil:'domcontentloaded' });
+          const cached = {
+            id:'guard-browser-job', revision:1, status:'draft', jobRef:'GUARD', customerName:'Test', staffName:'Jim', date:'2026-09-29',
+            sources:[{
+              id:'source1', name:'guard-panel.jpg', kind:'image', contentType:'image/jpeg', fileId:'source1.jpg', fileKey:'files/guard/source.jpg', sourceRevision:1,
+              previewUrl:null, analysisStatus:'review', manufacturingControlsV1:true, toughened:false, glassThicknessMm:6,
+              analysis:{
+                units:'mm', drawing_label:'Guard test', production_ready:false, requires_human_review:true, uncertainties:[], summary:'Guard fixture',
+                analysis_checks:{perimeter_traced:true,dimension_targets_followed:true,all_clear_figures_linked:false,square_markers_classified:true,perimeter_topology_closes:true,unsupported_geometry_present:false},
+                dimensions:[],
+                parts:[{ id:'panel', label:'Panel', profile:{ type:'rectangle', width_mm:500, height_mm:300, diameter_mm:null, width_dimension_id:'d1', height_dimension_id:'d2', diameter_dimension_id:null, confidence:'high', top_mm:null,bottom_mm:null,left_mm:null,right_mm:null,top_dimension_id:null,bottom_dimension_id:null,left_dimension_id:null,right_dimension_id:null,right_angle_corners:[],side_heights_to_notch_shoulders:false,boundary_segments:[],corner_radii:[] }, features:[{ id:'Cut-out 1', type:'rectangular_cutout', quantity:1, width_mm:80, height_mm:60, diameter_mm:null, radius_mm:null, cutout_finish:'unpolished', cutout_finish_confirmed:true, x_mm:100, x_reference:'edge', x_from_edge:'left', y_mm:80, y_reference:'edge', y_from_edge:'bottom', touching_edge:'none', width_dimension_id:'d3', height_dimension_id:'d4', diameter_dimension_id:null, radius_dimension_id:null, x_dimension_id:'d5', y_dimension_id:'d6', confidence:'high', source_note:null, corner:'none', depth_mm:null, offset_mm:null, depth_dimension_id:null, offset_dimension_id:null }], dimension_ids:['d1','d2','d3','d4','d5','d6','r6'] }]
+              },
+              dimensions:[
+                {id:'d1',label:'Overall width',role:'overall',valueMm:500,reference:'size',fromEdge:'unknown',rawText:'500',confidence:'high',confirmed:false},
+                {id:'d2',label:'Overall height',role:'overall',valueMm:300,reference:'size',fromEdge:'unknown',rawText:'300',confidence:'high',confirmed:false},
+                {id:'d3',label:'Cut-out 1 width',role:'size',valueMm:80,reference:'size',fromEdge:'unknown',rawText:'80',confidence:'high',confirmed:false},
+                {id:'d4',label:'Cut-out 1 height',role:'size',valueMm:60,reference:'size',fromEdge:'unknown',rawText:'60',confidence:'high',confirmed:false},
+                {id:'d5',label:'Cut-out 1 X position',role:'position',valueMm:100,reference:'edge',fromEdge:'left',rawText:'100',confidence:'high',confirmed:false},
+                {id:'d6',label:'Cut-out 1 Y position',role:'position',valueMm:80,reference:'edge',fromEdge:'bottom',rawText:'80',confidence:'high',confirmed:false},
+                {id:'r6',label:'R6.0 mm approx.',sourceLabel:'R6.0 mm approx.',role:'radius',valueMm:6,reference:'size',fromEdge:'unknown',rawText:'R6.0 mm approx.',confidence:'medium',confirmed:false}
+              ]
+            }],
+            activeSourceId:'source1'
+          };
+          await page.evaluate((value) => localStorage.setItem('quick-dxf-unsynced-v1', JSON.stringify(value)), cached);
+          await page.reload({ waitUntil:'domcontentloaded' });
+          await new Promise((resolve) => setTimeout(resolve, 400));
+
+          const assignOpened = await page.evaluate(() => {
+            const row = [...document.querySelectorAll('.unlinked-read')].find((item) => item.textContent.includes('R6.0'));
+            const assign = [...(row?.querySelectorAll('button') || [])].find((button) => button.textContent.trim() === 'Assign');
+            assign?.click();
+            return Boolean(assign);
+          });
+          if (!assignOpened) throw new Error('Expected R6 unlinked read with Assign button');
+          await new Promise((resolve) => setTimeout(resolve, 80));
+
+          let state = await page.evaluate(() => {
+            const select = document.querySelector('#dimensionTarget');
+            const add = document.querySelector('#dimensionAddBtn');
+            const width = [...(select?.options || [])].find((option) => /Cut-out 1 width/i.test(option.textContent));
+            const additional = [...(select?.options || [])].find((option) => /Additional reference dimension/i.test(option.textContent));
+            return {
+              open: document.querySelector('#dimensionDialog')?.open,
+              target: select?.value,
+              addDisabled: add?.disabled,
+              widthDisabled: width?.disabled,
+              additionalDisabled: additional?.disabled,
+              message: document.querySelector('#dimensionAssignmentGuardMessage')?.textContent || '',
+            };
+          });
+          if (!state.open || state.target !== '' || !state.addDisabled || !state.widthDisabled || state.additionalDisabled || !/radius/i.test(state.message)) {
+            throw new Error(`Unsafe Assign state: ${JSON.stringify(state)}`);
+          }
+
+          await page.select('#dimensionTarget', 'additional');
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          if (await page.$eval('#dimensionAddBtn', (button) => button.disabled)) throw new Error('Compatible explicit target should enable Add');
+          await page.click('#dimensionDialog .dialog-actions .quiet');
+
+          const before = await page.$$eval('.unlinked-read', (rows) => rows.length);
+          await page.click('#addCorrectionBtn');
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          state = await page.evaluate(() => ({
+            target: document.querySelector('#dimensionTarget')?.value,
+            addDisabled: document.querySelector('#dimensionAddBtn')?.disabled,
+          }));
+          if (state.target !== '' || !state.addDisabled) throw new Error(`General add auto-selected a target: ${JSON.stringify(state)}`);
+          await page.select('#dimensionTarget', 'additional');
+          await page.type('#dimensionValue', '42');
+          await page.click('#dimensionAddBtn');
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          const after = await page.$$eval('.unlinked-read', (rows) => rows.length);
+          if (after !== before + 1) throw new Error(`Expected one explicit additional reference dimension; before=${before}, after=${after}`);
+
+          if (pageErrors.length) throw new Error(`Browser page errors: ${pageErrors.join(' | ')}`);
+          await browser.close();
+          console.log('analysis assignment browser guard passed');
+          NODE
+          node analysis-guard-browser.mjs

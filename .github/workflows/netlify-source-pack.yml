@@ -1,0 +1,28 @@
+name: Package Drawing Desk source for controlled Netlify deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'docs/netlify-source-pack-trigger.txt'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+      - name: Package source
+        run: |
+          tar --exclude='.git' -czf /tmp/sapiver-draw-dxf-source.tgz .
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sapiver-draw-dxf-source
+          path: /tmp/sapiver-draw-dxf-source.tgz
+          if-no-files-found: error
+          retention-days: 1

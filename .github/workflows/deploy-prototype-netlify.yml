@@ -36,18 +36,20 @@ jobs:
       - name: Install function dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Re-run critical renderer tests before production deploy
+      - name: Re-run critical production checks
         run: |
+          node tests/analysis-integrity.test.mjs
           node tests/review-model.test.mjs
           node tests/renderer-fix.test.mjs
           node tests/curves-radii.test.mjs
           node tests/access-auth.test.mjs
+          node tests/ui-contract.test.mjs
 
       - name: Build production publish directory
         run: |
           rm -rf dist
           mkdir -p dist
-          cp index.html app-v5.js share-release.js review-stages.js dist/
+          cp index.html app-v5.js app-v5-base.js dimension-assignment-ui-guard.js build-stamp.js share-release.js review-stages.js dist/
           cp styles.css job.css job-v4.css geometry-preview.css manufacturing-settings.css release-fixes.css halifax-glass.css dist/
           cp -R assets core dist/
 

@@ -217,6 +217,7 @@ export function dimensionAssignmentIssue(source, slot, dimension) {
   if (intent === 'diameter') return 'A diameter figure cannot be assigned to a non-diameter parameter.';
 
   if (slot.ownerType === 'feature' && role === 'overall') return 'An overall panel dimension cannot be assigned to a feature size.';
+  if (slot.ownerType === 'segment' && parameter === 'length') return null;
   if (intent === 'width' && !['width', 'chord', 'length', 'top', 'bottom'].includes(parameter)) return 'A width figure does not match this parameter.';
   if (intent === 'height' && !['height', 'rise', 'length', 'left', 'right'].includes(parameter)) return 'A height figure does not match this parameter.';
   if (intent === 'depth' && parameter !== 'depth') return 'A depth figure does not match this parameter.';

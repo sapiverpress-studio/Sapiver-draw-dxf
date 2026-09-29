@@ -5,6 +5,7 @@ const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const appEntry = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
 const appBase = fs.readFileSync(new URL('../app-v5-base.js', import.meta.url), 'utf8');
 const assignmentGuard = fs.readFileSync(new URL('../dimension-assignment-ui-guard.js', import.meta.url), 'utf8');
+const buildStamp = fs.readFileSync(new URL('../build-stamp.js', import.meta.url), 'utf8');
 const app = `${appBase}\n${appEntry}\n${assignmentGuard}`;
 const share = fs.readFileSync(new URL('../share-release.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../job-v4.css', import.meta.url), 'utf8');
@@ -23,6 +24,8 @@ assert.match(html, /src="\.\/app-v5\.js"/, 'prototype must load app-v5.js');
 assert.doesNotMatch(html, /src="\.\/app-v[23]\.js"/, 'prototype must not load an older app entry point');
 assert.match(appEntry, /app-v5-base\.js/, 'guarded app entry must preserve the known-working implementation');
 assert.match(appEntry, /dimension-assignment-ui-guard\.js/, 'guarded app entry must load the assignment safety layer');
+assert.match(appEntry, /build-stamp\.js/, 'guarded app entry must load the release build timestamp');
+assert.match(buildStamp, /Version 2026\.09\.29 · 10:30 UTC/, 'deployed interface must show the current timestamped version');
 assert.match(assignmentGuard, /Choose the correct production parameter/, 'unlinked reads must require an explicit target');
 assert.match(assignmentGuard, /stopImmediatePropagation/, 'unsafe target submission must be intercepted before the legacy handler can mutate state');
 assert.match(html, /id="geometryPreview"/, 'clean geometry preview must be present');
@@ -59,7 +62,6 @@ assert.match(app, /Clarification needed/, 'real AI ambiguities must be shown as 
 assert.match(html, /id="purgeJobBtn"/, 'protected permanent deletion control must be present');
 assert.match(html, /assets\/halifaxglass-logo\.svg/, 'Halifax Glass logo must be present in the tool header');
 assert.match(html, /halifax-glass\.css/, 'Halifax Glass visual theme must be loaded');
-assert.match(html, /Version 2026\.09\.29 · 10:30 UTC/, 'deployed interface must show its timestamped version');
 assert.match(app, /permanent: 'true'/, 'permanent deletion must call the protected server operation');
 assert.match(css, /img\[hidden\]\{display:none!important\}/, 'hidden preview images must stay hidden even when image CSS sets display:block');
 

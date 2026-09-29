@@ -111,6 +111,10 @@ function hardenOpenDialog() {
   pendingSourceText = '';
 }
 
+function afterLegacyDialogSetup(callback) {
+  window.setTimeout(callback, 0);
+}
+
 document.addEventListener('click', (event) => {
   const button = buttonFromEvent(event);
   if (!button) return;
@@ -118,21 +122,21 @@ document.addEventListener('click', (event) => {
   if (button.id === 'addCorrectionBtn') {
     pendingMode = 'new';
     pendingSourceText = '';
-    queueMicrotask(hardenOpenDialog);
+    afterLegacyDialogSetup(hardenOpenDialog);
     return;
   }
 
   if (button.textContent?.trim() === 'Assign' && button.closest('.unlinked-read')) {
     pendingMode = 'assign';
     pendingSourceText = button.closest('.unlinked-read')?.textContent || '';
-    queueMicrotask(hardenOpenDialog);
+    afterLegacyDialogSetup(hardenOpenDialog);
     return;
   }
 
   if (button.textContent?.trim() === 'Add value') {
     pendingMode = null;
     pendingSourceText = '';
-    queueMicrotask(deactivateGuard);
+    afterLegacyDialogSetup(deactivateGuard);
   }
 }, true);
 

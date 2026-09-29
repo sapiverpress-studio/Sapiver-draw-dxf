@@ -2,7 +2,7 @@ name: Curves and radii checks
 
 on:
   push:
-    branches: [feature/curves-radii, main]
+    branches: [feature/curves-radii, main, fix/repo-wide-analysis-geometry-guardrails]
   workflow_dispatch:
 
 permissions:
@@ -19,15 +19,24 @@ jobs:
           node-version: '22'
       - name: Syntax checks
         run: |
+          node --check app-v5.js
+          node --check app-v5-base.js
+          node --check dimension-assignment-ui-guard.js
+          node --check core/analysis-integrity.js
           node --check core/curves.js
           node --check core/geometry.js
+          node --check core/geometry-base.js
           node --check core/geometry-legacy.js
           node --check core/confirmation-pdf.js
           node --check core/review-model.js
+          node --check core/review-model-base.js
           node --check core/review-model-legacy.js
           node --check core/review-model-fixed.js
           node --check netlify/functions/_quick-dxf-analysis.mjs
+          node --check netlify/functions/_quick-dxf-analysis-base.mjs
           node --check netlify/functions/_quick-dxf-analysis-legacy.mjs
+      - name: Repo-wide analysis integrity regressions
+        run: node tests/analysis-integrity.test.mjs
       - name: Existing deterministic regression suite
         run: |
           node tests/geometry.test.mjs

@@ -3,6 +3,7 @@ import {
   dimensionAssignmentIssue,
   preserveDimensionSourceLabels,
 } from './analysis-integrity.js';
+import { isReviewOnlyDimension } from './review-references.js';
 
 export * from './review-model-base.js';
 
@@ -17,6 +18,10 @@ function rejectUnsafeLinks(source) {
     if (!dimensionId) continue;
     const dimension = dimensionById(source, dimensionId);
     if (!dimension) continue;
+    if (isReviewOnlyDimension(dimension)) {
+      base.setSlotDimensionId(source, slot, null);
+      continue;
+    }
     const issue = dimensionAssignmentIssue(source, slot, dimension);
     if (!issue) {
       delete dimension.assignmentError;
@@ -39,7 +44,7 @@ export function setSlotDimensionId(source, slot, dimensionId) {
   preserveDimensionSourceLabels(source);
   if (!dimensionId) return base.setSlotDimensionId(source, slot, null);
   const dimension = dimensionById(source, dimensionId);
-  if (!dimension) return false;
+  if (!dimension || isReviewOnlyDimension(dimension)) return false;
   const issue = dimensionAssignmentIssue(source, slot, dimension);
   if (issue) {
     dimension.assignmentError = issue;

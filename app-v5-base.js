@@ -2,6 +2,7 @@ import { buildConfirmationPdf } from './core/confirmation-pdf.js';
 import { compileSourceGeometry } from './core/geometry.js';
 import { buildDxf } from './core/dxf.js';
 import { saveZip, zipFromRefs } from './core/zip.js';
+import { isReviewOnlyDimension, parseReviewOnlyTarget, recordReviewOnlyDimension, reviewOnlyTargetOptions } from './core/review-references.js';
 import {
   geometrySlots,
   isPerimeterSlot,
@@ -814,26 +815,56 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
   const title = $('#dimensionDialogTitle');
 
   const slots = geometrySlots(source);
+  const reviewTargets = reviewOnlyTargetOptions(source, slots);
+  if (isReviewOnlyDimension(existingDimension) && ['overall-width', 'overall-height'].includes(existingDimension.reviewTarget)) {
+    const partIndex = Number.isInteger(existingDimension.reviewPartIndex) ? existingDimension.reviewPartIndex : 0;
+    const value = `review:${existingDimension.reviewTarget}:p${partIndex}`;
+    if (!reviewTargets.some((option) => option.value === value)) {
+      const part = source.analysis?.parts?.[partIndex];
+      const name = String(part?.label || part?.id || `Part ${partIndex + 1}`).trim();
+      reviewTargets.push({ value, label: `${name} ${existingDimension.reviewTarget === 'overall-width' ? 'overall width' : 'overall height'} — review only, no DXF`, target: existingDimension.reviewTarget, partIndex });
+    }
+  }
   target.innerHTML = '';
-  const additional = document.createElement('option'); additional.value = 'additional'; additional.textContent = 'Additional reference dimension (does not affect DXF)'; target.appendChild(additional);
+  const additional = document.createElement('option'); additional.value = 'review:named-reference'; additional.textContent = 'Additional reference dimension — saved for review; no DXF geometry'; target.appendChild(additional);
+  for (const reviewTarget of reviewTargets.filter((option) => option.value !== 'review:named-reference')) {
+    const option = document.createElement('option'); option.value = reviewTarget.value; option.textContent = reviewTarget.label; target.appendChild(option);
+  }
   for (const slot of slots) {
     if (slot.kind === 'process') continue;
     const current = dimensionForSlot(source, slot);
     if (!slotKey && !existingDimension && current) continue;
     const option = document.createElement('option'); option.value = slot.key; option.textContent = current ? `${slot.label} (replace current link)` : slot.label; target.appendChild(option);
   }
+  const firstProductionTarget = [...target.options].find((option) => !parseReviewOnlyTarget(option.value))?.value;
+  const firstReviewTarget = reviewTargets[0]?.value || 'review:named-reference';
   if (slotKey && [...target.options].some((o) => o.value === slotKey)) target.value = slotKey;
+  else if (isReviewOnlyDimension(existingDimension)) {
+    const reviewValue = existingDimension.reviewTarget === 'named-reference'
+      ? 'review:named-reference'
+      : `review:${existingDimension.reviewTarget}:p${existingDimension.reviewPartIndex ?? 0}`;
+    if ([...target.options].some((option) => option.value === reviewValue)) target.value = reviewValue;
+  }
   else if (existingDimension) {
     const currentSlot = slots.find((s) => slotDimensionId(source, s) === existingDimension.id);
     if (currentSlot && [...target.options].some((o) => o.value === currentSlot.key)) target.value = currentSlot.key;
-    else target.value = [...target.options].find((o) => o.value !== 'additional')?.value || 'additional';
-  } else target.value = [...target.options].find((o) => o.value !== 'additional')?.value || 'additional';
+    else target.value = firstProductionTarget || firstReviewTarget;
+  } else target.value = firstProductionTarget || firstReviewTarget;
 
   title.textContent = existingDimension ? 'Assign / correct dimension' : 'Add dimension';
   description.value = existingDimension?.label || '';
   value.value = existingDimension?.valueMm ?? '';
 
-  function syncTarget() {
+  function syncTarget({ refreshDescription = false } = {}) {
+    const review = parseReviewOnlyTarget(target.value);
+    if (review) {
+      positionFields.hidden = true;
+      if (refreshDescription && review.target !== 'named-reference') {
+        const definition = reviewTargets.find((option) => option.value === target.value);
+        if (definition) description.value = definition.label.split(' — ')[0];
+      }
+      return;
+    }
     const slot = target.value === 'additional' ? null : slotByKey(source, target.value);
     if (slot) description.value = slot.label;
     positionFields.hidden = !slot || slot.kind !== 'position';
@@ -846,7 +877,7 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
     }
   }
   reference.onchange = () => { fromEdge.disabled = reference.value === 'previous'; };
-  target.onchange = syncTarget;
+  target.onchange = () => syncTarget({ refreshDescription: true });
   syncTarget();
 
   addBtn.onclick = () => {
@@ -859,6 +890,19 @@ function openDimensionDialog({ slotKey = null, existingDimension = null } = {}) 
       d = { id: `manual-${id()}`, label: '', role: 'unknown', valueMm: null, reference: 'unknown', fromEdge: 'unknown', rawText: '', confidence: 'manual', confirmed: false };
       source.dimensions.push(d);
     }
+    const reviewTarget = parseReviewOnlyTarget(target.value);
+    if (reviewTarget) {
+      recordReviewOnlyDimension(d, {
+        target: reviewTarget.target,
+        partIndex: reviewTarget.partIndex,
+        label: description.value,
+        valueMm: numeric,
+      });
+      repairGeometryLinks(source);
+      invalidateApproval(); dialog.close(); render(); scheduleSave();
+      return;
+    }
+    delete d.reviewOnly; delete d.reviewTarget; delete d.reviewPartIndex;
     d.label = slot?.label || description.value.trim() || 'Additional dimension';
     d.valueMm = numeric;
     d.confirmed = false;
@@ -1149,6 +1193,26 @@ function renderDimensions() {
       row.appendChild(actions); extraGroup.appendChild(row);
     }
     els.dimensionList.appendChild(extraGroup);
+  }
+
+  const reviewOnly = (source.dimensions || []).filter((dimension) => isReviewOnlyDimension(dimension));
+  if (reviewOnly.length) {
+    const reviewGroup = document.createElement('section'); reviewGroup.className = 'feature-group auxiliary-group review-only-group';
+    const heading = document.createElement('div'); heading.className = 'feature-group-head';
+    heading.innerHTML = '<strong>Review-only measurements</strong><span>Saved · excluded from DXF</span>';
+    reviewGroup.appendChild(heading);
+    for (const d of reviewOnly) {
+      const row = document.createElement('div'); row.className = 'unlinked-read review-only-read';
+      const targetLabel = d.reviewTarget === 'overall-width' ? 'Overall width' : d.reviewTarget === 'overall-height' ? 'Overall height' : 'Reference only';
+      row.innerHTML = `<span><strong>${escapeHtml(d.label || targetLabel)}</strong><small>${escapeHtml(d.valueMm ?? '—')} mm · ${escapeHtml(targetLabel)} · does not define DXF geometry</small></span>`;
+      const actions = document.createElement('div'); actions.className = 'unlinked-actions';
+      const edit = document.createElement('button'); edit.type = 'button'; edit.className = 'button quiet'; edit.textContent = 'Edit'; edit.disabled = isFrozen(); edit.addEventListener('click', () => openDimensionDialog({ existingDimension: d })); actions.appendChild(edit);
+      const confirm = document.createElement('button'); confirm.type = 'button'; confirm.className = `button quiet ${d.confirmed ? 'confirmed' : ''}`; confirm.textContent = d.confirmed ? 'Confirmed ✓' : 'Confirm'; confirm.disabled = isFrozen();
+      confirm.addEventListener('click', () => { d.confirmed = !d.confirmed; invalidateApproval(); render(); scheduleSave(); }); actions.appendChild(confirm);
+      if (d.confidence === 'manual') { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'button quiet'; remove.textContent = 'Remove'; remove.disabled = isFrozen(); remove.addEventListener('click', () => removeManualDimension(source, d)); actions.appendChild(remove); }
+      row.appendChild(actions); reviewGroup.appendChild(row);
+    }
+    els.dimensionList.appendChild(reviewGroup);
   }
 }
 

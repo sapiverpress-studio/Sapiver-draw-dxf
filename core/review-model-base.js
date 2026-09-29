@@ -1,5 +1,6 @@
 import * as legacy from './review-model-legacy.js';
 import { compileSourceGeometry, geometryToSvg } from './geometry.js';
+import { isReviewOnlyDimension } from './review-references.js';
 
 function finitePositive(value){return Number.isFinite(Number(value))&&Number(value)>0;}
 function nearlyEqual(a,b,tolerance=0.01){return Number.isFinite(Number(a))&&Number.isFinite(Number(b))&&Math.abs(Number(a)-Number(b))<=tolerance;}
@@ -127,14 +128,14 @@ function curveCandidateScore(source,slot,dimension){
 function repairCurveSlot(source,slot,dimensions){
   const owner=slotOwner(source,slot); if(!owner)return;
   const profile=source?.analysis?.parts?.[slot.partIndex]?.profile||{};
-  const byId=new Map(dimensions.map((d)=>[d.id,d]));
+  const byId=new Map(dimensions.filter((dimension)=>!isReviewOnlyDimension(dimension)).map((d)=>[d.id,d]));
   let dimension=owner[slot.field]?byId.get(owner[slot.field]):null;
   if(!dimension&&finitePositive(owner[slot.valueField])){
-    const candidates=dimensions.filter((d)=>finitePositive(d.valueMm)&&nearlyEqual(d.valueMm,owner[slot.valueField]));
+    const candidates=dimensions.filter((d)=>!isReviewOnlyDimension(d)&&finitePositive(d.valueMm)&&nearlyEqual(d.valueMm,owner[slot.valueField]));
     if(candidates.length===1){dimension=candidates[0];owner[slot.field]=dimension.id;}
   }
   if(!dimension&&['segment','corner-radius'].includes(slot.ownerType)){
-    const ranked=dimensions.filter((candidate)=>finitePositive(candidate.valueMm))
+    const ranked=dimensions.filter((candidate)=>!isReviewOnlyDimension(candidate)&&finitePositive(candidate.valueMm))
       .map((candidate)=>({candidate,score:curveCandidateScore(source,slot,candidate)}))
       .filter((item)=>item.score>=12).sort((a,b)=>b.score-a.score);
     if(ranked.length&&(!ranked[1]||ranked[0].score>ranked[1].score||ranked[0].candidate.id===ranked[1].candidate.id)){
@@ -166,7 +167,7 @@ function repairCurveSlot(source,slot,dimensions){
   }
 }
 function propagatePathAggregateDimensions(source){
-  const dimensions=new Map((source?.dimensions||[]).map((dimension)=>[dimension.id,dimension]));
+  const dimensions=new Map((source?.dimensions||[]).filter((dimension)=>!isReviewOnlyDimension(dimension)).map((dimension)=>[dimension.id,dimension]));
   for(const part of source?.analysis?.parts||[]){
     const profile=part?.profile||{};
     if(profile.type!=='path')continue;
@@ -246,7 +247,7 @@ export function materialiseDerivedDimensions(source){
   }
   repairGeometryLinks(source);return source;
 }
-export function dimensionForSlot(source,slot){if(!hasCurveGeometry(source))return legacy.dimensionForSlot(source,slot);const id=slotDimensionId(source,slot);return id?(source?.dimensions||[]).find((d)=>d.id===id)||null:null;}
+export function dimensionForSlot(source,slot){if(!hasCurveGeometry(source))return legacy.dimensionForSlot(source,slot);const id=slotDimensionId(source,slot);return id?(source?.dimensions||[]).find((d)=>d.id===id&&!isReviewOnlyDimension(d))||null:null;}
 export function dimensionReadyForSlot(slot,dimension){
   if(!slot||!(dimension?.confirmed&&finitePositive(dimension.valueMm)))return false;
   if(slot.kind==='size')return dimension.reference==='size';
@@ -259,7 +260,7 @@ export function reviewStats(source){
   for(const slot of slots){const d=dimensionForSlot(source,slot);if(d)linked++;if(dimensionReadyForSlot(slot,d))confirmed++;}
   return {total:slots.length,linked,confirmed,missing:Math.max(0,slots.length-linked),slots};
 }
-export function unlinkedDimensions(source){if(!hasCurveGeometry(source))return legacy.unlinkedDimensions(source);const linked=new Set(geometrySlots(source).map((slot)=>slotDimensionId(source,slot)).filter(Boolean));return (source?.dimensions||[]).filter((d)=>!linked.has(d.id));}
+export function unlinkedDimensions(source){if(!hasCurveGeometry(source))return legacy.unlinkedDimensions(source);const linked=new Set(geometrySlots(source).map((slot)=>slotDimensionId(source,slot)).filter(Boolean));return (source?.dimensions||[]).filter((d)=>!isReviewOnlyDimension(d)&&!linked.has(d.id));}
 export function unlinkDimension(source,dimensionId){if(!hasCurveGeometry(source))return legacy.unlinkDimension(source,dimensionId);for(const slot of geometrySlots(source))if(slotDimensionId(source,slot)===dimensionId)setSlotDimensionId(source,slot,null);}
 
 function pendingCurveSvg(source){

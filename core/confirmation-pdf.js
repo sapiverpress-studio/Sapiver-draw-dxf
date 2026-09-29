@@ -1,4 +1,10 @@
+import { isReviewOnlyDimension } from './review-references.js';
+
 const A4 = [595.28, 841.89];
+
+export function confirmationDimensions(source) {
+  return (source?.dimensions || []).filter((dimension) => !isReviewOnlyDimension(dimension));
+}
 
 function wrap(text, font, size, maxWidth) {
   const words = String(text || '').split(/\s+/).filter(Boolean);
@@ -148,7 +154,7 @@ function drawDimensionTable(page, source, font, fontBold, startY, includeFooter 
   page.drawText('Value', { x: cols[1], y, font: fontBold, size: 8 });
   page.drawText('Reference', { x: cols[2], y, font: fontBold, size: 8 });
   y -= 13;
-  for (const d of source.dimensions || []) {
+  for (const d of confirmationDimensions(source)) {
     const desc = safe(d.label, 'Dimension');
     const descLines = wrap(desc, font, 7.5, cols[1] - cols[0] - 8).slice(0, 2);
     page.drawText(descLines[0] || '', { x: cols[0], y, font, size: 7.5 });
@@ -187,7 +193,7 @@ export async function buildConfirmationPdf(job) {
     y -= 18;
     sources.forEach((source, index) => {
       page.drawText(`Drawing ${String.fromCharCode(65 + index)} - ${safe(source.name)}`, { x: 36, y, font, size: 8 });
-      page.drawText(`${source.dimensions?.length || 0} confirmed dimensions`, { x: 400, y, font, size: 8 });
+      page.drawText(`${confirmationDimensions(source).length} confirmed dimensions`, { x: 400, y, font, size: 8 });
       y -= 16;
     });
     y -= 25;
@@ -232,7 +238,7 @@ export async function buildConfirmationPdf(job) {
     }
   }
 
-  if (sources.length === 1 && (sources[0].dimensions?.length || 0) > 11) {
+  if (sources.length === 1 && confirmationDimensions(sources[0]).length > 11) {
     const page = pdfDoc.addPage(A4);
     drawHeader(page, fontBold, job, 'Approval signature');
     drawApproval(page, font, fontBold, 700);

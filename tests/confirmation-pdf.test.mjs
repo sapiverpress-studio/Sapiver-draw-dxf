@@ -1,9 +1,16 @@
 import assert from 'node:assert/strict';
 import {
+  confirmationDimensions,
   confirmationArcPoints,
   confirmationPartSizeText,
   drawCompiledGeometry,
 } from '../core/confirmation-pdf.js';
+
+const pdfDimensions = confirmationDimensions({ dimensions: [
+  { id:'production', label:'Overall width', valueMm:900 },
+  { id:'reference', label:'R3.5 mm approx.', valueMm:3.5, reviewOnly:true },
+] });
+assert.deepEqual(pdfDimensions.map((dimension) => dimension.id), ['production'], 'review-only measurements must not appear among dimensions signed off for manufacture');
 
 const arc = {
   type: 'arc', cx: 600, cy: 600, r: 600,

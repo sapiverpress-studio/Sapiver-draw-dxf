@@ -31,7 +31,9 @@ jobs:
           node tests/geometry.test.mjs
           node tests/irregular-notches.test.mjs
       - name: Feature-aware review tests
-        run: node tests/review-model.test.mjs
+        run: |
+          node tests/review-model.test.mjs
+          node tests/review-references.test.mjs
       - name: Draft deletion tests
         run: |
           node tests/job-delete.test.mjs

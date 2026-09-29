@@ -31,6 +31,7 @@ jobs:
           node --check core/review-model.js
           node --check core/review-model-base.js
           node --check core/review-model-legacy.js
+          node --check core/review-references.js
           node --check core/review-model-fixed.js
           node --check netlify/functions/_quick-dxf-analysis.mjs
           node --check netlify/functions/_quick-dxf-analysis-base.mjs
@@ -41,6 +42,7 @@ jobs:
         run: |
           node tests/geometry.test.mjs
           node tests/review-model.test.mjs
+          node tests/review-references.test.mjs
           node tests/renderer-fix.test.mjs
           node tests/irregular-notches.test.mjs
           node tests/internet-drawing-matrix.test.mjs

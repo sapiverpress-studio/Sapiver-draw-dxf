@@ -1,4 +1,5 @@
 import { compileSourceGeometry, geometryToSvg } from './geometry.js';
+import { isReviewOnlyDimension, reviewOnlyDimensionFor } from './review-references.js';
 
 const EPS = 1e-6;
 
@@ -269,7 +270,7 @@ export function repairGeometryLinks(source) {
   repairDoubleTopShoulderProfiles(source);
   repairTwoSquareTaperedProfiles(source);
   repairSteppedRectangleProfiles(source);
-  const dimensions = source.dimensions;
+  const dimensions = source.dimensions.filter((dimension) => !isReviewOnlyDimension(dimension));
   const byId = new Map(dimensions.map((d) => [d.id, d]));
   const slots = geometrySlots(source);
   const claimed = new Set();
@@ -348,7 +349,7 @@ export function repairGeometryLinks(source) {
 
 export function dimensionForSlot(source, slot) {
   const dimensionId = slotDimensionId(source, slot);
-  return dimensionId ? source?.dimensions?.find((d) => d.id === dimensionId) || null : null;
+  return dimensionId ? source?.dimensions?.find((d) => d.id === dimensionId && !isReviewOnlyDimension(d)) || null : null;
 }
 
 export function dimensionReadyForSlot(slot, dimension) {
@@ -373,7 +374,7 @@ export function reviewStats(source) {
 
 export function unlinkedDimensions(source) {
   const linked = new Set(geometrySlots(source).map((slot) => slotDimensionId(source, slot)).filter(Boolean));
-  return (source?.dimensions || []).filter((d) => !linked.has(d.id));
+  return (source?.dimensions || []).filter((d) => !isReviewOnlyDimension(d) && !linked.has(d.id));
 }
 
 export function unlinkDimension(source, dimensionId) {
@@ -536,6 +537,29 @@ function drawCirclePart(chunks, source, part, partIndex, yOffset, slots) {
   }
 }
 
+function drawUnsupportedPart(chunks, source, part, partIndex, yOffset) {
+  const width = reviewOnlyDimensionFor(source, 'overall-width', partIndex);
+  const height = reviewOnlyDimensionFor(source, 'overall-height', partIndex);
+  const confirmedWidth = width?.confirmed && finitePositive(width.valueMm) ? Number(width.valueMm) : null;
+  const confirmedHeight = height?.confirmed && finitePositive(height.valueMm) ? Number(height.valueMm) : null;
+  const canvasX = 150, canvasY = yOffset + 60, boxW = 610, boxH = 260;
+  text(chunks, 40, yOffset + 28, partName(part, partIndex), 'font-weight="700" font-size="16"');
+  chunks.push(`<rect x="${canvasX}" y="${canvasY}" width="${boxW}" height="${boxH}" fill="none" stroke="#98a2b3" stroke-width="2" stroke-dasharray="8 6"/>`);
+  if (confirmedWidth) {
+    line(chunks, canvasX, canvasY + boxH + 28, canvasX + boxW, canvasY + boxH + 28, true);
+    text(chunks, canvasX + boxW / 2, canvasY + boxH + 23, `${confirmedWidth} mm overall width · review only`, 'text-anchor="middle" font-weight="700"');
+  } else {
+    text(chunks, canvasX + boxW / 2, canvasY + boxH + 34, 'Confirm overall width to record the scale', 'text-anchor="middle" fill="#667085"');
+  }
+  if (confirmedHeight) {
+    line(chunks, canvasX - 18, canvasY, canvasX - 18, canvasY + boxH, true);
+    text(chunks, canvasX - 26, canvasY + boxH / 2, `${confirmedHeight} mm overall height · review only`, `text-anchor="middle" transform="rotate(-90 ${canvasX - 26} ${canvasY + boxH / 2})"`);
+  } else {
+    text(chunks, canvasX + boxW / 2, canvasY + boxH / 2, 'Outline not traced', 'text-anchor="middle" fill="#667085"');
+  }
+  text(chunks, canvasX + boxW / 2, canvasY + boxH / 2 + 24, 'Measurements here do not define DXF geometry', 'text-anchor="middle" fill="#667085" font-size="12"');
+}
+
 export function reviewDrawingSvg(source) {
   repairGeometryLinks(source);
   const parts = Array.isArray(source?.analysis?.parts) ? source.analysis.parts : [];
@@ -550,7 +574,9 @@ export function reviewDrawingSvg(source) {
   const chunks = [`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 ${height}" role="img" aria-label="Confirmed digital drawing">`, markerDef(), '<rect width="100%" height="100%" fill="white"/>'];
   parts.forEach((part, partIndex) => {
     const yOffset = partIndex * 430;
-    if (part?.profile?.type === 'circle') drawCirclePart(chunks, source, part, partIndex, yOffset, slots);
+    const profileType = part?.profile?.type;
+    if (profileType === 'circle') drawCirclePart(chunks, source, part, partIndex, yOffset, slots);
+    else if (!['rectangle', 'quadrilateral', 'path'].includes(profileType) || (profileType === 'path' && !(part?.profile?.boundary_segments || []).length)) drawUnsupportedPart(chunks, source, part, partIndex, yOffset);
     else drawRectanglePart(chunks, source, part, partIndex, yOffset, slots);
   });
   chunks.push('</svg>');

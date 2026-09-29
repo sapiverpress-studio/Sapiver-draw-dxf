@@ -107,12 +107,14 @@ jobs:
             throw new Error(`Unsafe Assign state: ${JSON.stringify(state)}`);
           }
 
-          await page.select('#dimensionTarget', 'additional');
+          await page.select('#dimensionTarget', 'review:named-reference');
           await new Promise((resolve) => setTimeout(resolve, 30));
           if (await page.$eval('#dimensionAddBtn', (button) => button.disabled)) throw new Error('Compatible explicit target should enable Add');
-          await page.click('#dimensionDialog .dialog-actions .quiet');
+          await page.click('#dimensionAddBtn');
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          if (await page.$$eval('.review-only-read', (rows) => rows.length) !== 1) throw new Error('Assigning a named reference must move it into the saved review-only list');
 
-          const before = await page.$$eval('.unlinked-read', (rows) => rows.length);
+          const before = await page.$$eval('.unlinked-read:not(.review-only-read)', (rows) => rows.length);
           await page.click('#addCorrectionBtn');
           await new Promise((resolve) => setTimeout(resolve, 80));
           state = await page.evaluate(() => ({
@@ -120,12 +122,53 @@ jobs:
             addDisabled: document.querySelector('#dimensionAddBtn')?.disabled,
           }));
           if (state.target !== '' || !state.addDisabled) throw new Error(`General add auto-selected a target: ${JSON.stringify(state)}`);
-          await page.select('#dimensionTarget', 'additional');
+          await page.select('#dimensionTarget', 'review:named-reference');
           await page.type('#dimensionValue', '42');
           await page.click('#dimensionAddBtn');
           await new Promise((resolve) => setTimeout(resolve, 120));
-          const after = await page.$$eval('.unlinked-read', (rows) => rows.length);
-          if (after !== before + 1) throw new Error(`Expected one explicit additional reference dimension; before=${before}, after=${after}`);
+          const after = await page.$$eval('.unlinked-read:not(.review-only-read)', (rows) => rows.length);
+          if (after !== before || await page.$$eval('.review-only-read', (rows) => rows.length) !== 2) throw new Error(`Expected an explicitly saved review-only reference; unlinked before=${before}, after=${after}`);
+
+          const unknownProfile = structuredClone(cached);
+          unknownProfile.sources[0].analysis.parts[0].profile = { type:'unknown', width_dimension_id:null, height_dimension_id:null };
+          unknownProfile.sources[0].analysis.parts[0].features = [];
+          unknownProfile.sources[0].analysis.analysis_checks.unsupported_geometry_present = true;
+          unknownProfile.sources[0].dimensions = [
+            {id:'overall-w',label:'11.4 mm',role:'overall',valueMm:11.4,reference:'size',fromEdge:'unknown',rawText:'11.4 mm',confidence:'high',confirmed:false},
+            {id:'overall-h',label:'20.9 mm',role:'overall',valueMm:20.9,reference:'size',fromEdge:'unknown',rawText:'20.9 mm',confidence:'high',confirmed:false},
+            {id:'crown-r',label:'R3.5 mm approx.',role:'radius',valueMm:3.5,reference:'size',fromEdge:'unknown',rawText:'R3.5 mm approx.',confidence:'high',confirmed:false},
+          ];
+          await page.evaluate((value) => localStorage.setItem('quick-dxf-unsynced-v1', JSON.stringify(value)), unknownProfile);
+          await page.reload({ waitUntil:'domcontentloaded' });
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          await page.evaluate(() => {
+            const row = [...document.querySelectorAll('.unlinked-read')].find((item) => item.textContent.includes('11.4 mm'));
+            [...(row?.querySelectorAll('button') || [])].find((button) => button.textContent.trim() === 'Assign')?.click();
+          });
+          await new Promise((resolve) => setTimeout(resolve, 80));
+          const widthOption = await page.$eval('#dimensionTarget', (select) => [...select.options].some((option) => option.value === 'review:overall-width:p0' && /review only, no DXF/i.test(option.textContent)));
+          if (!widthOption) throw new Error('Unknown profile should offer an explicit review-only overall width target');
+          await page.select('#dimensionTarget', 'review:overall-width:p0');
+          await page.click('#dimensionAddBtn');
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          await page.evaluate(() => {
+            const row = [...document.querySelectorAll('.review-only-read')].find((item) => item.textContent.includes('Overall width'));
+            [...(row?.querySelectorAll('button') || [])].find((button) => button.textContent.trim() === 'Confirm')?.click();
+          });
+          await new Promise((resolve) => setTimeout(resolve, 120));
+          const unknownState = await page.evaluate(() => {
+            const row = [...document.querySelectorAll('.review-only-read')].find((item) => item.textContent.includes('Overall width'));
+            const drawing = decodeURIComponent((document.querySelector('#geometryPreview')?.src || '').split(',').slice(1).join(','));
+            return {
+              assignedRemovedFromOtherReads: ![...document.querySelectorAll('.unlinked-read:not(.review-only-read)')].some((item) => item.textContent.includes('11.4 mm')),
+              confirmed: row?.textContent.includes('Confirmed'),
+              drawingHasReferenceWidth: drawing.includes('11.4 mm overall width'),
+              progress: document.querySelector('#reviewProgress')?.textContent?.trim(),
+            };
+          });
+          if (!unknownState.assignedRemovedFromOtherReads || !unknownState.confirmed || !unknownState.drawingHasReferenceWidth || unknownState.progress !== '0 / 0 confirmed') {
+            throw new Error(`Review-only width behavior was unsafe or invisible: ${JSON.stringify(unknownState)}`);
+          }
 
           if (pageErrors.length) throw new Error(`Browser page errors: ${pageErrors.join(' | ')}`);
           await browser.close();

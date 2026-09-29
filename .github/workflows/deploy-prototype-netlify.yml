@@ -40,6 +40,7 @@ jobs:
         run: |
           node tests/analysis-integrity.test.mjs
           node tests/review-model.test.mjs
+          node tests/review-references.test.mjs
           node tests/renderer-fix.test.mjs
           node tests/curves-radii.test.mjs
           node tests/access-auth.test.mjs

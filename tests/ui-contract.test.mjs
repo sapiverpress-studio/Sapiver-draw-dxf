@@ -2,20 +2,29 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const app = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
+const appEntry = fs.readFileSync(new URL('../app-v5.js', import.meta.url), 'utf8');
+const appBase = fs.readFileSync(new URL('../app-v5-base.js', import.meta.url), 'utf8');
+const assignmentGuard = fs.readFileSync(new URL('../dimension-assignment-ui-guard.js', import.meta.url), 'utf8');
+const app = `${appBase}\n${appEntry}\n${assignmentGuard}`;
 const share = fs.readFileSync(new URL('../share-release.js', import.meta.url), 'utf8');
 const css = fs.readFileSync(new URL('../job-v4.css', import.meta.url), 'utf8');
 const geometryPreviewCss = fs.readFileSync(new URL('../geometry-preview.css', import.meta.url), 'utf8');
-const geometry = fs.readFileSync(new URL('../core/geometry.js', import.meta.url), 'utf8');
+const geometryEntry = fs.readFileSync(new URL('../core/geometry.js', import.meta.url), 'utf8');
+const geometryBase = fs.readFileSync(new URL('../core/geometry-base.js', import.meta.url), 'utf8');
+const geometry = `${geometryBase}\n${geometryEntry}`;
 
 const selectorIds = [...app.matchAll(/\$\('#([^']+)'\)/g)].map((m) => m[1]);
 for (const id of selectorIds) {
-  assert.ok(html.includes(`id="${id}"`) || app.includes(`id="${id}"`) || app.includes(`.id = '${id}'`), `Neither index.html nor app-v5.js creates #${id}`);
+  assert.ok(html.includes(`id="${id}"`) || app.includes(`id="${id}"`) || app.includes(`.id = '${id}'`), `Neither index.html nor guarded app-v5 creates #${id}`);
 }
 
 assert.match(html, /src="\.\/share-release\.js"/, 'native share release helper must be loaded');
 assert.match(html, /src="\.\/app-v5\.js"/, 'prototype must load app-v5.js');
 assert.doesNotMatch(html, /src="\.\/app-v[23]\.js"/, 'prototype must not load an older app entry point');
+assert.match(appEntry, /app-v5-base\.js/, 'guarded app entry must preserve the known-working implementation');
+assert.match(appEntry, /dimension-assignment-ui-guard\.js/, 'guarded app entry must load the assignment safety layer');
+assert.match(assignmentGuard, /Choose the correct production parameter/, 'unlinked reads must require an explicit target');
+assert.match(assignmentGuard, /stopImmediatePropagation/, 'unsafe target submission must be intercepted before the legacy handler can mutate state');
 assert.match(html, /id="geometryPreview"/, 'clean geometry preview must be present');
 assert.match(html, /id="dxfState"/, 'DXF release state must be present');
 assert.match(html, /multiple/, 'multi-file source upload must remain enabled');
@@ -37,6 +46,7 @@ assert.match(html, /id="polishAllBtn"/, 'bulk polished selection must be availab
 assert.match(html, /id="unpolishedAllBtn"/, 'bulk unpolished selection must be available');
 assert.match(geometry, /1\.5\s*\*/, 'toughened edge-clearance rule must remain in the deterministic engine');
 assert.match(geometry, /4\s*\*\s*thickness/, 'toughened corner-clearance rule must remain in the deterministic engine');
+assert.match(geometryEntry, /Analysis integrity:/, 'DXF compilation must block structurally unsafe analysis');
 assert.match(html, /id="addManualCutoutBtn"[^>]*>Add another cut-out</, 'repeatable cut-out control must be present');
 assert.match(app, /Edge of previous cut-out/, 'uploaded drawing review must offer chained cut-out positioning');
 assert.match(app, /dataset\.reviewGroup = slots\.every\(isPerimeterSlot\)/, 'review groups must classify profile and path-segment slots as perimeter controls');

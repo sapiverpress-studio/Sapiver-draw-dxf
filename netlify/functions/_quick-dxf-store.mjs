@@ -1,12 +1,17 @@
-import { getDeployStore } from '@netlify/blobs';
+import { getStore, getDeployStore } from '@netlify/blobs';
 
 export const JOB_STORE = 'quick-dxf-jobs';
 
-export function store() {
-  // PREVIEW ONLY: deploy-scoped storage prevents test jobs, file uploads and deletion
-  // from touching Halifax Glass production data. This change must not be
-  // merged into production without explicit production store routing.
-  return getDeployStore({ name: JOB_STORE, consistency: 'strong' });
+// Production must retain the EXISTING site-wide store and all historical jobs.
+// Preview/branch contexts must not read or write site-wide production data.
+// If the context is absent or unrecognised, fail closed into deploy-scoped data.
+export function storageScope(context) {
+  return context?.deploy?.context === 'production' ? 'production' : 'isolated';
+}
+
+export function store(context) {
+  const options = { name: JOB_STORE, consistency: 'strong' };
+  return storageScope(context) === 'production' ? getStore(options) : getDeployStore(options);
 }
 
 export function json(value, status = 200) {

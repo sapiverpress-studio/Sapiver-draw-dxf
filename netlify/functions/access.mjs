@@ -19,7 +19,7 @@ export default async (request, context) => {
 
   let body;
   try { body = await request.json(); } catch { return json({ error: 'Invalid request.' }, 400); }
-  const s = store();
+  const s = store(context);
   const rate = await checkRateLimit(s, context?.ip);
   if (!rate.allowed) return json({ error: 'Too many failed attempts. Try again in 15 minutes.' }, 429);
   if (!verifyCode(body?.code)) {

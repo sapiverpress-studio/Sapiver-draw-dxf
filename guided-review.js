@@ -225,7 +225,8 @@ if (list && side && previewStack) {
         ? 'Position reference missing — select Edit to specify the measuring edges.'
         : ref.value === 'previous'
           ? 'Measured from the previous cut-out.'
-          : 'Measured to the ' + ref.value + ' from the ' + edge.value + ' edge.';
+          : 'From the ' + edge.value + ' glass edge to the feature ' +
+            (ref.value === 'centre' ? 'centre.' : edge.value + ' edge.');
       active.card.classList.toggle('guided-reference-missing', unknown);
     } else {
       active.card.classList.remove('guided-reference-missing');

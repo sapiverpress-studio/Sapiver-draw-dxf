@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="./manufacturing-settings.css">
   <link rel="stylesheet" href="./release-fixes.css">
   <link rel="stylesheet" href="./halifax-glass.css">
+  <link rel="stylesheet" href="./guided-review.css">
 </head>
 <body>
   <div id="accessGate" class="access-gate" role="dialog" aria-modal="true" aria-labelledby="accessTitle">
@@ -40,29 +41,41 @@
 
   <main class="job-shell">
     <section class="panel job-panel">
-      <div class="section-head">
-        <div><p class="eyebrow">1 · Job</p><h1>Job details</h1></div>
-        <div class="section-actions">
-          <button id="newJobBtn" class="button quiet" type="button">New job</button>
-          <button id="newRevisionBtn" class="button quiet" type="button" hidden>New revision</button>
-          <button id="saveJobBtn" class="button" type="button">Save now</button>
-        </div>
+      <h1>Start a job</h1>
+      <div class="mode-buttons" role="group" aria-label="Choose job mode">
+        <button id="jobModeNew" class="button" type="button" aria-pressed="false">New job</button>
+        <button id="jobModeSaved" class="button" type="button" aria-pressed="false">Saved job</button>
       </div>
 
-      <div class="job-grid">
-        <label>Job reference<input id="jobRef" type="text" placeholder="e.g. 18437"></label>
-        <label>Customer name<input id="customerName" type="text" placeholder="Customer / company"></label>
-        <input id="customerEmail" type="hidden" value="">
-        <label>Staff member<input id="staffName" type="text" placeholder="Assistant"></label>
-        <label>Date<input id="jobDate" type="date"></label>
-      </div>
-      <div class="shared-jobs">
-        <div class="shared-search">
-          <input id="jobSearch" type="search" placeholder="Search saved jobs by reference or customer">
-          <button id="refreshJobsBtn" class="button quiet" type="button">Refresh</button>
+      <div id="newJobWorkspace" hidden>
+        <div class="section-head">
+          <div><p class="eyebrow">1 · Job</p><h2>Job details</h2></div>
+          <div class="section-actions">
+            <button id="newJobBtn" class="button quiet" type="button">Clear / new job</button>
+            <button id="newRevisionBtn" class="button quiet" type="button" hidden>New revision</button>
+            <button id="saveJobBtn" class="button" type="button">Save now</button>
+          </div>
         </div>
-        <div id="jobResults" class="job-results"></div>
+        <div class="job-grid">
+          <label>Job reference<input id="jobRef" type="text" placeholder="Enter job reference"></label>
+          <label>Customer name<input id="customerName" type="text" placeholder="Customer / company"></label>
+          <input id="customerEmail" type="hidden" value="">
+          <label>Staff member<input id="staffName" type="text" placeholder="Assistant"></label>
+          <label>Date<input id="jobDate" type="date"></label>
+        </div>
         <p id="saveState" class="small muted">Not yet saved to shared storage.</p>
+      </div>
+
+      <div id="savedJobWorkspace" hidden>
+        <h2>Load previous job</h2>
+        <div class="shared-jobs">
+          <div class="shared-search">
+            <input id="jobSearch" type="search" placeholder="Search saved jobs by reference or customer">
+            <button id="refreshJobsBtn" class="button quiet" type="button">Search</button>
+          </div>
+          <div id="jobResults" class="job-results"></div>
+          <p class="small muted">This preview has a separate test-job archive. Production jobs are not shown here.</p>
+        </div>
       </div>
     </section>
 
@@ -214,6 +227,7 @@
   </dialog>
   <script type="module" src="./share-release.js"></script>
   <script type="module" src="./app-v5.js"></script>
-  <script type="module" src="./review-stages.js"></script>
+  <script type="module" src="./guided-review.js"></script>
+  <script type="module" src="./job-entry-tabs.js"></script>
 </body>
 </html>

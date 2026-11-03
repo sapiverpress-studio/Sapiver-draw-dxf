@@ -1,0 +1,46 @@
+name: Guided drawing review checks (no deploy)
+
+on:
+  push:
+    branches:
+      - feature/guided-dimension-review-20261103
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and native drawing regressions
+        run: |
+          node --check guided-review.js
+          node --check app-v5.js
+          node --check app-v5-base.js
+          node --check dimension-assignment-ui-guard.js
+          node --check tests/guided-review-browser.mjs
+          node tests/analysis-integrity.test.mjs
+          node tests/geometry.test.mjs
+          node tests/curves-radii.test.mjs
+          node tests/review-model.test.mjs
+          node tests/review-references.test.mjs
+          node tests/irregular-notches.test.mjs
+          node tests/analyser-contract.test.mjs
+          node tests/confirmation-pdf.test.mjs
+          node tests/release-share.test.mjs
+          node tests/ui-contract.test.mjs
+      - name: Install browser driver (no application deployment)
+        run: npm install --no-save --ignore-scripts puppeteer-core@24
+      - name: Verify real AI analysis and context-isolated storage
+        run: node tests/production-integration.test.mjs
+      - name: Chromium interaction checks
+        run: |
+          python3 -m http.server 4173 >/tmp/guided-review-http.log 2>&1 &
+          node tests/guided-review-browser.mjs

@@ -13,7 +13,7 @@ async function assertRevisionWritable(s, jobId, revision) {
   if (['locked', 'sent'].includes(job.status)) throw new Error('This signed revision is locked and its files cannot be changed.');
 }
 
-export default async (request) => {
+export default async (request, context) => {
   const denied = requireAuth(request, json);
   if (denied) return denied;
   const url = new URL(request.url);
@@ -22,7 +22,7 @@ export default async (request) => {
   const fileId = safeFileId(url.searchParams.get('file'));
   if (!jobId || !fileId) return json({ error: 'Invalid file reference.' }, 400);
 
-  const s = store();
+  const s = store(context);
   const key = fileKey(jobId, revision, fileId);
 
   if (request.method === 'GET' || request.method === 'HEAD') {

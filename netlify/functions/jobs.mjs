@@ -20,7 +20,7 @@ async function listJobs(s, query) {
 export default async (request, context) => {
   const denied = requireAuth(request, json);
   if (denied) return denied;
-  const s = store();
+  const s = store(context);
   const url = new URL(request.url);
 
   if (request.method === 'GET') {

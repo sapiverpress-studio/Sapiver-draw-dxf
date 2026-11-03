@@ -50,8 +50,8 @@ jobs:
         run: |
           rm -rf dist
           mkdir -p dist
-          cp index.html app-v5.js app-v5-base.js dimension-assignment-ui-guard.js build-stamp.js share-release.js review-stages.js dist/
-          cp styles.css job.css job-v4.css geometry-preview.css manufacturing-settings.css release-fixes.css halifax-glass.css dist/
+          cp index.html app-v5.js app-v5-base.js dimension-assignment-ui-guard.js build-stamp.js share-release.js review-stages.js guided-review.js job-entry-tabs.js dist/
+          cp styles.css job.css job-v4.css geometry-preview.css manufacturing-settings.css release-fixes.css halifax-glass.css guided-review.css dist/
           cp -R assets core dist/
 
       - name: Deploy current main to existing Netlify production site

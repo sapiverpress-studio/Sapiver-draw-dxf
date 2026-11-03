@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/guided-dimension-review-20261103
+      - feature/step-by-step-drawing-desk-20261103
       - main
   workflow_dispatch:
 
@@ -26,6 +27,8 @@ jobs:
           node --check app-v5-base.js
           node --check dimension-assignment-ui-guard.js
           node --check tests/guided-review-browser.mjs
+          node --check drawing-desk-flow.js
+          node --check tests/drawing-desk-flow-browser.mjs
           node tests/analysis-integrity.test.mjs
           node tests/geometry.test.mjs
           node tests/curves-radii.test.mjs
@@ -44,3 +47,4 @@ jobs:
         run: |
           python3 -m http.server 4173 >/tmp/guided-review-http.log 2>&1 &
           node tests/guided-review-browser.mjs
+          node tests/drawing-desk-flow-browser.mjs

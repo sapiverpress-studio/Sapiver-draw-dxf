@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="./styles.css">
   <link rel="stylesheet" href="./job.css">
   <link rel="stylesheet" href="./job-v4.css">
+  <link rel="stylesheet" href="./guided-review.css">
   <link rel="stylesheet" href="./geometry-preview.css">
   <link rel="stylesheet" href="./manufacturing-settings.css">
   <link rel="stylesheet" href="./release-fixes.css">
@@ -57,6 +58,7 @@
         <label>Date<input id="jobDate" type="date"></label>
       </div>
       <div class="shared-jobs">
+        <p class="helper">Find an earlier job by customer name or job reference, or continue a saved drawing.</p>
         <div class="shared-search">
           <input id="jobSearch" type="search" placeholder="Search saved jobs by reference or customer">
           <button id="refreshJobsBtn" class="button quiet" type="button">Refresh</button>
@@ -214,6 +216,6 @@
   </dialog>
   <script type="module" src="./share-release.js"></script>
   <script type="module" src="./app-v5.js"></script>
-  <script type="module" src="./review-stages.js"></script>
+  <script type="module" src="./guided-review.js"></script>
 </body>
 </html>

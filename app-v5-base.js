@@ -540,7 +540,8 @@ function openManualDrawing() {
   if (isFrozen()) return;
   els.manualDrawingForm.reset(); els.manualCutouts.innerHTML = ''; els.manualCornerCutouts.innerHTML = ''; els.manualEdgeNotches.innerHTML = ''; els.manualDrawingError.textContent = '';
   syncManualProfileType();
-  addManualCutoutRow(); els.manualDrawingDialog.showModal();
+  // Start with no cut-outs. An operator explicitly adds only those required.
+  els.manualDrawingDialog.showModal();
 }
 
 function syncManualProfileType() {

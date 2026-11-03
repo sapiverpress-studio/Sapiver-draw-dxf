@@ -10,7 +10,7 @@ if (list && side && previewStack) {
     selectedKey: null,
     editingKey: null,
     advanceKey: null,
-    extrasOpen: false,
+    extrasOpen: true,
   };
 
   const header = document.createElement('section');
@@ -152,11 +152,12 @@ if (list && side && previewStack) {
       state.selectedKey = null;
       state.editingKey = null;
       state.advanceKey = null;
-      state.extrasOpen = false;
+      state.extrasOpen = true;
     }
 
     const enabled = steps.length > 0;
     side.classList.toggle('guided-enabled', enabled);
+    side.closest('.review-panel')?.classList.toggle('guided-review-enabled', enabled);
     header.hidden = !enabled;
     footer.hidden = !enabled;
     if (!enabled) return;
@@ -188,7 +189,7 @@ if (list && side && previewStack) {
     const done = steps.filter((step) => step.confirmed).length;
     ui.feature.textContent = active.isPerimeter ? 'Outer glass' :
       active.isProcess ? active.label.replace(/\s+edge finish$/i, '') : active.groupTitle;
-    ui.counter.textContent = 'Review ' + (index + 1) + ' of ' + steps.length;
+    ui.counter.textContent = 'Review ' + (index + 1) + ' of ' + steps.length + ' · ' + done + ' confirmed';
     ui.task.textContent = active.confirmed ? active.label + ' — confirmed' : 'Confirm ' + active.label;
     ui.status.textContent = active.confirmed ? 'Confirmed' : 'Pending';
     ui.status.classList.toggle('complete', active.confirmed);
@@ -196,7 +197,7 @@ if (list && side && previewStack) {
     ui.bar.setAttribute('aria-valuenow', String(Math.round(100 * done / steps.length)));
     ui.hint.textContent = active.isProcess
       ? 'Confirm the actual workshop finish for this cut-out.'
-      : 'Compare the highlighted measurement with the original drawing. Use Edit to change it.';
+      : 'Check the measurement against the original drawing. Use Edit if it needs changing.';
 
     ui.previous.disabled = index === 0;
     ui.next.disabled = index === steps.length - 1;
@@ -260,7 +261,7 @@ if (list && side && previewStack) {
     const extras = [...list.querySelectorAll(':scope > .auxiliary-group:not(.analysis-questions)')];
     const hasExtras = extras.length > 0;
     ui.extras.hidden = !hasExtras;
-    ui.extras.textContent = (state.extrasOpen ? 'Hide' : 'Show') + ' other readings (' +
+    ui.extras.textContent = (state.extrasOpen ? 'Hide' : 'Review') + ' additional AI readings (' +
       extras.reduce((total, group) => total + group.querySelectorAll('.unlinked-read').length, 0) + ')';
     ui.extras.setAttribute('aria-expanded', String(state.extrasOpen));
     side.classList.toggle('guided-extras-open', state.extrasOpen);

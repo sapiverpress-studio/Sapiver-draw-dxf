@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f172a">
+<title>Drawing Desk — UX Demonstration</title>
+<meta name="description" content="No-login, fictional-data demonstration of guided dimension confirmation.">
+<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./job.css">
+<link rel="stylesheet" href="./job-v4.css">
+<link rel="stylesheet" href="./geometry-preview.css">
+<link rel="stylesheet" href="./halifax-glass.css">
+<link rel="stylesheet" href="./guided-review.css">
+<style>
+  body {background:#eef1f5}
+  .demo-notice {background:#fff8de;border:1px solid #d9b55a;border-radius:11px;margin:14px auto 0;width:min(1280px,calc(100% - 28px));padding:12px 14px;line-height:1.5;color:#60420c;font-size:.86rem}
+  .demo-notice strong {display:block}
+  .demo-header-actions {display:flex;align-items:center;gap:12px}
+  .demo-header-actions a {color:#2d5c8a}
+  .demo-actions {margin-top:10px;display:flex;gap:8px;flex-wrap:wrap}
+  .demo-result {font-size:.82rem;color:#475467;margin-top:8px}
+  .demo-drawing {width:100%;max-width:680px;height:auto;display:block}
+  .drawing-preview-wrap {min-height:280px;padding:5px}
+  .drawing-preview-wrap svg {width:100%;height:auto;max-height:450px}
+  .source-status {padding:10px 12px;border:1px solid #d0d5dd;border-radius:9px;background:#f8fafc}
+  .demo-finishing .dimension-value-wrap {display:none}
+  .demo-footer {max-width:1280px;margin:14px auto 24px;padding:0 14px;font-size:.82rem;color:#667085}
+  @media(max-width:580px){.demo-notice{margin:7px;width:calc(100% - 14px)}.company-logo{max-height:40px}.demo-header-actions{display:none}.review-panel{padding:12px}}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="company-brand">
+    <img class="company-logo" src="./assets/halifaxglass-logo.svg" alt="Halifax Glass">
+    <div class="company-tool"><strong>Drawing Desk</strong><span>Guided review — UX demonstration</span></div>
+  </div>
+  <div class="demo-header-actions"><span class="badge neutral">Demo only</span><a href="./">Return to protected application</a></div>
+</header>
+<div class="demo-notice" role="status">
+  <strong>No login needed — interactive UX demonstration</strong>
+  Every job, customer and measurement here is fictional. Nothing is uploaded or saved to Halifax Glass.
+  This screen demonstrates editing and confirming dimensions, not live AI analysis, customer approval or production DXF export.
+</div>
+
+<main class="job-shell">
+<section class="panel job-panel">
+  <div class="section-head">
+    <div><p class="eyebrow">1 · Job</p><h1>Job details</h1></div>
+    <div class="section-actions">
+      <button class="button quiet" id="demoNew" type="button">New demo job</button>
+      <button class="button" id="demoSave" type="button">Save demo job</button>
+    </div>
+  </div>
+  <div class="job-grid">
+    <label>Job reference<input id="jobRef" type="text" value="DEMO-18437"></label>
+    <label>Customer name<input id="customerName" type="text" value="Example Customer"></label>
+    <label>Staff member<input id="staffName" type="text" value="Test Operator"></label>
+    <label>Date<input id="jobDate" type="date" value="2026-11-03"></label>
+  </div>
+  <div class="shared-jobs">
+    <p class="helper">Find an earlier demo job by customer name or job reference. Real production jobs are not accessible here.</p>
+    <div class="shared-search">
+      <input id="jobSearch" type="search" placeholder="Search saved jobs by reference or customer" autocomplete="off">
+      <button class="button quiet" id="demoSearch" type="button">Search</button>
+    </div>
+    <div class="job-results" id="jobResults"></div>
+    <p class="small muted" id="demoSaveState">Demo jobs stay in this browser page only. They disappear when you reload it.</p>
+  </div>
+</section>
+
+<section class="panel source-panel">
+  <div class="section-head">
+    <div><p class="eyebrow">2 · Source drawing</p><h1>Sample glass panel</h1></div>
+    <span class="counter">1 demonstration drawing</span>
+  </div>
+  <p class="source-status">Illustrative 1200 × 700 mm panel with one socket cut-out. Use the review controls below to check or edit the proposed dimensions.</p>
+</section>
+
+<section class="panel review-panel">
+  <div class="section-head">
+    <div><p class="eyebrow">3 · Confirm</p><h1 id="activeSourceTitle">Drawing 1 · Sample glass panel</h1><p class="helper">Select Original or DXF preview, then confirm each measurement or use Edit.</p></div>
+    <span id="reviewProgress" class="counter">0 / 0</span>
+  </div>
+  <div class="review-layout">
+    <div class="preview-stack">
+      <div>
+        <p class="preview-label">Original drawing (fictional)</p>
+        <div class="drawing-preview-wrap"><img id="drawingPreview" alt="Sample hand-drawn glass dimensions" class="demo-drawing"></div>
+      </div>
+      <div>
+        <p class="preview-label">DXF preview (illustrative)</p>
+        <div class="drawing-preview-wrap geometry-preview-wrap"><div id="geometryPreview" aria-label="Illustrative drawing, not a manufacturing DXF"></div></div>
+        <div class="ai-state geometry-state">Demonstration geometry only. No manufacturing file is created.</div>
+      </div>
+    </div>
+    <div class="dimension-side">
+      <div class="ai-state" id="demoStatus">Review the drawing and confirm the measurements individually.</div>
+      <div class="dimension-list" id="dimensionList"></div>
+      <p class="demo-result" id="demoResult" aria-live="polite"></p>
+    </div>
+  </div>
+</section>
+
+<section class="panel approval-panel">
+  <div class="section-head"><div><p class="eyebrow">4 · Final checks</p><h1>Review summary</h1></div></div>
+  <p class="helper" id="demoSummary">No measurements confirmed yet.</p>
+  <p class="small muted">Customer signature and actual DXF export are intentionally unavailable in this demonstration. The protected production workflow is unchanged.</p>
+</section>
+</main>
+<p class="demo-footer">Prototype branch: guided-dimension-review-20261103. Nothing on this page accesses or changes production jobs.</p>
+
+<script>
+(function () {
+  'use strict';
+  const samples = [];
+  let dims;
+  const fields = ['jobRef','customerName','staffName','jobDate'];
+
+  function initialDimensions() {
+    return [
+      {group:'Panel', label:'Overall width', value:1200, type:'size', confirmed:false},
+      {group:'Panel', label:'Overall height', value:700, type:'size', confirmed:false},
+      {group:'Socket cut-out 1', label:'Socket cut-out 1 width', value:160, type:'size', confirmed:false},
+      {group:'Socket cut-out 1', label:'Socket cut-out 1 height', value:110, type:'size', confirmed:false},
+      {group:'Socket cut-out 1', label:'Socket cut-out 1 horizontal position', value:120, type:'position', ref:'edge', edge:'left', confirmed:false},
+      {group:'Socket cut-out 1', label:'Socket cut-out 1 vertical position', value:90, type:'position', ref:'edge', edge:'top', confirmed:false},
+      {group:'Cut-out finishes', label:'Socket cut-out 1 edge finish', type:'process', finish:'unpolished', confirmed:false}
+    ];
+  }
+
+  function esc(text) { return String(text).replace(/[&<>"']/g, function (char) {return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char];}); }
+  function originalDrawing() {
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 310">' +
+      '<rect width="520" height="310" rx="8" fill="#f9f6ed"/>' +
+      '<g stroke="#586273" fill="none" stroke-width="2.5"><path d="M83 75 H436 V247 H83 Z"/><path d="M158 75 V111 H211 V75"/>' +
+      '<path d="M84 55 H436 M84 53 V59 M436 53 V59 M62 75 V247 M58 75 H65 M58 247 H65"/>' +
+      '<path d="M158 123 V142 M211 123 V142 M158 138 H211"/></g>' +
+      '<g fill="#27394c" font-family="sans-serif" font-size="17"><text x="240" y="47" text-anchor="middle">1200</text>' +
+      '<text x="47" y="162" transform="rotate(-90 47 162)" text-anchor="middle">700</text>' +
+      '<text x="185" y="165" text-anchor="middle">160</text>' +
+      '<text x="258" y="97" font-size="14">Socket</text>' +
+      '<text x="258" y="117" font-size="14">cut-out</text>' +
+      '<text x="260" y="285" font-size="13" text-anchor="middle">Fictional source drawing · millimetres</text></g></svg>';
+  }
+  function updateDrawing() {
+    const width=dims[0].value, height=dims[1].value;
+    const cutw=dims[2].value, cuth=dims[3].value, x=dims[4].value, y=dims[5].value;
+    // Visually illustrative only — intentionally not a production geometry calculation.
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 310">' +
+      '<rect width="520" height="310" rx="8" fill="#f5f8fa"/>' +
+      '<path d="M82 75 H438 V248 H82 Z" fill="#dfeaf2" stroke="#375972" stroke-width="2.3"/>' +
+      '<path d="M157 75 V112 H213 V75" fill="#f5f8fa" stroke="#375972" stroke-width="2.3"/>' +
+      '<g stroke="#b08b43" stroke-width="1.6"><path d="M82 51 H438 M82 46 V56 M438 46 V56"/></g>' +
+      '<g fill="#1c3549" font-size="16" font-family="sans-serif"><text x="260" y="43" text-anchor="middle">'+esc(width)+' mm</text>' +
+      '<text x="46" y="165" transform="rotate(-90 46 165)" text-anchor="middle">'+esc(height)+' mm</text>' +
+      '<text x="185" y="154" text-anchor="middle" font-size="12">Cut-out</text>' +
+      '<text x="185" y="171" text-anchor="middle" font-size="12">'+esc(cutw)+' × '+esc(cuth)+'</text>' +
+      '<text x="260" y="285" text-anchor="middle" font-size="12">Position '+esc(x)+' / '+esc(y)+' mm · illustration only</text></g></svg>';
+    document.querySelector('#geometryPreview').innerHTML=svg;
+  }
+
+  function dimensionCard(d,i) {
+    const card=document.createElement('article');
+    card.className='dimension-row feature-dimension'+(d.confirmed?' is-confirmed':'')+(d.type==='process'?' demo-finishing':'');
+    const head=document.createElement('div');head.className='dimension-title-row';
+    head.innerHTML='<strong>'+esc(d.label)+'</strong><span class="parameter-pill '+(d.type==='process'?'process':d.type==='position'?'position':'size')+'">'+(d.type==='process'?'Process':d.type==='position'?'Position':'Size')+'</span>';
+    card.appendChild(head);
+
+    if(d.type==='process') {
+      const select=document.createElement('select');select.className='dimension-ref';
+      select.innerHTML='<option value="unknown">Choose finish</option><option value="polished">Polished / CNC — minimum R15</option><option value="unpolished">Unpolished — minimum R6</option>';
+      select.value=d.finish;
+      select.addEventListener('change',function(){d.finish=select.value;d.confirmed=false;render();});
+      card.appendChild(select);
+    } else {
+      const wrap=document.createElement('div');wrap.className='dimension-value-wrap';
+      const input=document.createElement('input');input.type='number';input.step='0.01';input.min='0.01';input.inputMode='decimal';input.value=d.value;
+      input.addEventListener('change',function() {
+        const n=Number(input.value);
+        if(n>0 && Number.isFinite(n)) {d.value=n;d.confirmed=false;}
+        else {input.value=d.value;document.querySelector('#demoResult').textContent='Enter a positive measurement in millimetres.';}
+        render();
+      });
+      const unit=document.createElement('span');unit.textContent='mm';wrap.append(input,unit);card.appendChild(wrap);
+      if(d.type==='position') {
+        const position=document.createElement('div');position.className='position-controls';
+        const sel=document.createElement('select');sel.innerHTML='<option value="unknown">Choose target</option><option value="edge">Cut-out edge</option><option value="centre">Cut-out centre</option>';
+        sel.value=d.ref;
+        const side=document.createElement('select');
+        side.innerHTML='<option value="unknown">Choose edge</option><option value="left">Left</option><option value="right">Right</option><option value="top">Top</option><option value="bottom">Bottom</option>';
+        side.value=d.edge;
+        sel.addEventListener('change',function(){d.ref=sel.value;d.confirmed=false;render();});
+        side.addEventListener('change',function(){d.edge=side.value;d.confirmed=false;render();});
+        position.append(sel,side);card.appendChild(position);
+      }
+    }
+
+    const actions=document.createElement('div');actions.className='dimension-card-actions';
+    const confirm=document.createElement('button');confirm.type='button';
+    confirm.className='button dimension-confirm'+(d.confirmed?' confirmed':'');
+    confirm.textContent=d.confirmed?'Confirmed ✓':'Confirm';
+    confirm.addEventListener('click',function(){
+      if(d.type==='process' && !['polished','unpolished'].includes(d.finish))return;
+      if(d.type==='position' && (d.ref==='unknown'||d.edge==='unknown'))return;
+      d.confirmed=true;
+      render();
+    });
+    actions.appendChild(confirm);card.appendChild(actions);
+
+    const note=document.createElement('small');note.className='dimension-meta';
+    note.textContent='Fictional measurement '+(i+1)+' · check against the illustrative source';
+    card.appendChild(note);
+    return card;
+  }
+
+  function render() {
+    const container=document.querySelector('#dimensionList');container.replaceChildren();
+    let last=null,group=null;
+    dims.forEach(function(d,i){
+      if(d.group!==last) {
+        group=document.createElement('section');group.className='feature-group';
+        group.dataset.reviewGroup=d.group==='Panel'?'perimeter':'features';
+        const title=document.createElement('div');title.className='feature-group-head';
+        const strong=document.createElement('strong');strong.textContent=d.group;
+        const count=document.createElement('span');count.textContent='';
+        title.append(strong,count);group.appendChild(title);container.appendChild(group);last=d.group;
+      }
+      group.appendChild(dimensionCard(d,i));
+    });
+    const done=dims.filter(function(d){return d.confirmed;}).length;
+    document.querySelector('#demoStatus').textContent=done===dims.length?'All sample measurements confirmed.':'Sample review · '+done+' of '+dims.length+' confirmed';
+    document.querySelector('#demoSummary').textContent=done===dims.length
+      ?'All fictional dimensions confirmed. This demonstration does not produce DXF files.'
+      :done+' of '+dims.length+' confirmed · '+(dims.length-done)+' still need review. Production output remains unavailable.';
+    updateDrawing();
+  }
+
+  const original=new Blob([originalDrawing()],{type:'image/svg+xml'});
+  document.querySelector('#drawingPreview').src=URL.createObjectURL(original);
+  function renderResults() {
+    const list=document.querySelector('#jobResults');list.replaceChildren();
+    const q=document.querySelector('#jobSearch').value.trim().toLowerCase();
+    const matches=samples.filter(function(s){return !q || s.ref.toLowerCase().includes(q) || s.customer.toLowerCase().includes(q);});
+    for(const sample of matches){
+      const row=document.createElement('button');row.type='button';row.className='job-result-load';
+      row.textContent=sample.ref+' — '+sample.customer+' (fictional sample)';
+      row.addEventListener('click',function(){
+        document.querySelector('#jobRef').value=sample.ref;
+        document.querySelector('#customerName').value=sample.customer;
+        dims=sample.dimensions.map(function(d){return Object.assign({},d);});
+        render();
+        document.querySelector('#demoSaveState').textContent='Opened demo job '+sample.ref+' (only in this browser page).';
+      });
+      list.appendChild(row);
+    }
+    if(!matches.length){const p=document.createElement('p');p.className='small muted';p.textContent='No matching demo jobs on this page.';list.appendChild(p);}
+  }
+  document.querySelector('#demoSave').addEventListener('click',function(){
+    const ref=document.querySelector('#jobRef').value.trim()||'DEMO';
+    const customer=document.querySelector('#customerName').value.trim()||'Example Customer';
+    const sample={ref,customer,dimensions:dims.map(function(d){return Object.assign({},d);})};
+    const index=samples.findIndex(function(s){return s.ref===ref;});
+    if(index>=0)samples.splice(index,1,sample);else samples.push(sample);
+    document.querySelector('#demoSaveState').textContent='Demo job saved in this page. Reloading removes it.';
+    renderResults();
+  });
+  document.querySelector('#demoNew').addEventListener('click',function(){
+    fields.forEach(function(field){document.getElementById(field).value=field==='jobDate'?'2026-11-03':'';});
+    dims=initialDimensions();render();
+    document.querySelector('#demoSaveState').textContent='New demo job. Nothing stored on a server.';
+  });
+  document.querySelector('#demoSearch').addEventListener('click',renderResults);
+  document.querySelector('#jobSearch').addEventListener('input',renderResults);
+  samples.push({ref:'DEMO-17210',customer:'Sample Garden Centre',dimensions:initialDimensions()});
+  dims=initialDimensions();render();renderResults();
+}());
+</script>
+<script src="./guided-review.js"></script>
+</body>
+</html>

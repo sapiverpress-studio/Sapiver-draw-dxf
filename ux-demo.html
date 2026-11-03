@@ -222,8 +222,8 @@ function manualCreate(event){
     dd.push(
       {group:'Socket cut-out 1',label:'Socket cut-out 1 width',value:cw,type:'size',confirmed:false},
       {group:'Socket cut-out 1',label:'Socket cut-out 1 height',value:ch,type:'size',confirmed:false},
-      {group:'Socket cut-out 1',label:'Socket cut-out 1 horizontal position',value:x,type:'position',ref:'edge',edge:'left',confirmed:false},
-      {group:'Socket cut-out 1',label:'Socket cut-out 1 vertical position',value:y,type:'position',ref:'edge',edge:'bottom',confirmed:false},
+      {group:'Socket cut-out 1',label:'Socket cut-out 1 horizontal position',value:x,type:'position',axis:'x',ref:'edge',edge:'left',confirmed:false},
+      {group:'Socket cut-out 1',label:'Socket cut-out 1 vertical position',value:y,type:'position',axis:'y',ref:'edge',edge:'bottom',confirmed:false},
       {group:'Cut-out finishes',label:'Socket cut-out 1 edge finish',type:'process',finish:'unknown',confirmed:false}
     );
   }
@@ -240,11 +240,17 @@ function drawingSvg(){
  const scale=Math.min(360/w,205/h), pw=w*scale,ph=h*scale,x0=(500-pw)/2,y0=(280-ph)/2;
  let elements='<rect x="'+x0+'" y="'+y0+'" width="'+pw+'" height="'+ph+'" fill="#dceaf3" stroke="#35556d" stroke-width="2"/>';
  if(dims.length>2){
-   const cw=dims[2].value,ch=dims[3].value,ox=dims[4].value,oy=dims[5].value;
-   if([cw,ch,ox,oy].every(n=>Number.isFinite(n)&&n>0)&&ox+cw<w&&oy+ch<h){
-     const rx=x0+ox*scale,ry=y0+ph-(oy+ch)*scale;
+   const cw=Number(dims[2].value),ch=Number(dims[3].value);
+   const dx=dims[4],dy=dims[5],x=Number(dx.value),y=Number(dy.value);
+   const xCentre=dx.ref==='centre',yCentre=dy.ref==='centre';
+   const left=dx.edge==='right' ? w-x-cw*(xCentre?0.5:1) : x-cw*(xCentre?0.5:0);
+   const bottom=dy.edge==='top' ? h-y-ch*(yCentre?0.5:1) : y-ch*(yCentre?0.5:0);
+   const valid=[cw,ch,x,y,left,bottom].every(n=>Number.isFinite(n)&&n>0)&&
+      left+cw<w&&bottom+ch<h&&['left','right'].includes(dx.edge)&&['top','bottom'].includes(dy.edge);
+   if(valid){
+     const rx=x0+left*scale,ry=y0+ph-(bottom+ch)*scale;
      elements+='<rect x="'+rx+'" y="'+ry+'" width="'+(cw*scale)+'" height="'+(ch*scale)+'" fill="#fff" stroke="#35556d" stroke-width="2"/>';
-   }else{elements+='<text x="250" y="22" text-anchor="middle" fill="#92400e" font-size="12">Check cut-out measurements</text>'}
+   }else{elements+='<text x="250" y="22" text-anchor="middle" fill="#92400e" font-size="12">Check cut-out size and position</text>'}
  }
  return '<svg viewBox="0 0 500 315" role="img" aria-label="Illustrative outline based on entered dimensions" xmlns="http://www.w3.org/2000/svg"><rect width="500" height="315" fill="#f8fafc"/>'+elements+
  '<text x="250" y="302" text-anchor="middle" fill="#475467" font-size="12">Entered '+escapeText(w)+' × '+escapeText(h)+' mm · not a manufacturing DXF</text></svg>';
@@ -264,7 +270,7 @@ function dimensionCard(d,i){
    if(d.type==='position'){
      const controls=document.createElement('div');controls.className='position-controls';
      const ref=document.createElement('select');ref.innerHTML='<option value="unknown">Measured to…</option><option value="edge">Cut-out edge</option><option value="centre">Cut-out centre</option>';ref.value=d.ref;
-     const from=document.createElement('select');from.innerHTML='<option value="unknown">From edge…</option><option value="left">Left glass edge</option><option value="right">Right glass edge</option><option value="top">Top glass edge</option><option value="bottom">Bottom glass edge</option>';from.value=d.edge;
+     const from=document.createElement('select');from.innerHTML=d.axis==='x' ? '<option value="unknown">From edge…</option><option value="left">Left glass edge</option><option value="right">Right glass edge</option>' : '<option value="unknown">From edge…</option><option value="top">Top glass edge</option><option value="bottom">Bottom glass edge</option>';from.value=d.edge;
      ref.addEventListener('change',()=>{d.ref=ref.value;d.confirmed=false;renderReview()});from.addEventListener('change',()=>{d.edge=from.value;d.confirmed=false;renderReview()});
      controls.append(ref,from);card.append(controls);
    }

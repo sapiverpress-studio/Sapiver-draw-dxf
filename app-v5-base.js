@@ -932,6 +932,7 @@ function makeProcessSlotCard(source, slot) {
   const process = ['polished','unpolished'].includes(owner?.cutout_finish) ? { value:owner.cutout_finish, confirmed:Boolean(owner.cutout_finish_confirmed) } : null;
   const card = document.createElement('article');
   card.className = `dimension-row feature-dimension ${process?.confirmed ? 'is-confirmed' : ''}`;
+  card.dataset.slotKey = slot.key;
   card.innerHTML = `<div class="dimension-title-row"><strong>${escapeHtml(slot.label)}</strong><span class="parameter-pill process">Process</span></div><p class="small muted">Choose the actual workshop finish. This sets the minimum permitted internal radius.</p>`;
   const select = document.createElement('select');
   select.className = 'dimension-ref';
@@ -960,6 +961,7 @@ function makeSlotCard(source, slot) {
   const d = dimensionForSlot(source, slot);
   const card = document.createElement('article');
   card.className = `dimension-row feature-dimension ${d?.confirmed ? 'is-confirmed' : ''}`;
+  card.dataset.slotKey = slot.key;
   if (!d) {
     card.classList.add('missing-dimension');
     card.innerHTML = `<div class="dimension-title-row"><strong>${escapeHtml(slot.label)}</strong><span class="parameter-pill ${slot.kind}">${slot.kind === 'size' ? 'Size' : 'Position'}</span></div><p class="small muted">No figured value is currently linked to this required geometry parameter.</p>`;

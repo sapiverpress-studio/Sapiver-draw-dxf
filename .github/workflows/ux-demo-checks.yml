@@ -1,0 +1,25 @@
+name: UX demo browser smoke test
+
+on:
+  push:
+    branches:
+      - feature/guided-dimension-review-20261103
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --check tests/ux-demo-browser.mjs
+      - run: npm install --no-save --ignore-scripts puppeteer-core@24
+      - run: |
+          python3 -m http.server 4173 >/tmp/ux-demo-web.log 2>&1 &
+          node tests/ux-demo-browser.mjs

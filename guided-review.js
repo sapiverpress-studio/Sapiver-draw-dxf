@@ -101,6 +101,7 @@ if (list && side && previewStack) {
           card,
           label,
           isProcess,
+          slotKey: card.dataset.slotKey || '',
           isPerimeter: group.dataset.reviewGroup === 'perimeter',
           confirmed: card.classList.contains('is-confirmed'),
         });
@@ -195,9 +196,20 @@ if (list && side && previewStack) {
     ui.status.classList.toggle('complete', active.confirmed);
     ui.fill.style.width = (100 * done / steps.length) + '%';
     ui.bar.setAttribute('aria-valuenow', String(Math.round(100 * done / steps.length)));
+    const svg = document.querySelector('#geometryPreview svg');
+    let highlightFound = false;
+    if (svg) {
+      for (const segment of svg.querySelectorAll('[data-slot-key]')) {
+        const isSelected = Boolean(active.slotKey && segment.getAttribute('data-slot-key') === active.slotKey);
+        segment.classList.toggle('is-active-dimension', isSelected);
+        if (isSelected) highlightFound = true;
+      }
+    }
     ui.hint.textContent = active.isProcess
       ? 'Confirm the actual workshop finish for this cut-out.'
-      : 'Check the measurement against the original drawing. Use Edit if it needs changing.';
+      : highlightFound
+        ? 'Amber highlights the current measurement on the digital drawing. Check it against the original.'
+        : 'Check this measurement against the original. Its precise drawing highlight may require other dimensions to be confirmed.';
 
     ui.previous.disabled = index === 0;
     ui.next.disabled = index === steps.length - 1;
@@ -294,5 +306,14 @@ if (list && side && previewStack) {
     });
   });
   observer.observe(list, { childList: true });
+  const drawing = document.querySelector('#geometryPreview');
+  if (drawing) {
+    let painting = false;
+    new MutationObserver(() => {
+      if (painting) return;
+      painting = true;
+      requestAnimationFrame(() => { painting = false; apply(); });
+    }).observe(drawing, { childList: true, subtree: true });
+  }
   apply();
 }

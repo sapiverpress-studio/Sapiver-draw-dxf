@@ -78,6 +78,15 @@ try {
   await page.evaluate((data) => localStorage.setItem('quick-dxf-unsynced-v1', JSON.stringify(data)), job);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#guidedReview:not([hidden])', { timeout: 5000 });
+  assert.equal(await page.$eval('body', (el) => el.dataset.deskStep), 'start');
+  assert.equal(await page.$eval('.source-panel', (el) => getComputedStyle(el).display), 'none');
+  assert.equal(await page.$eval('.review-panel', (el) => getComputedStyle(el).display), 'none');
+  // Simulate reopening a saved job at the review step, retaining the fixture's
+  // authentic analysed drawing and the real production confirmation controls.
+  await page.evaluate(() => { document.body.dataset.deskStep = 'review'; });
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.review-panel')).display !== 'none');
+  assert.equal(await page.$eval('svg [data-slot-key="p0:profile:width"]', (el) => el.classList.contains('is-active-dimension')), true);
+
 
   const basics = await page.evaluate(() => ({
     jobRef: document.querySelector('#jobRef')?.value,
@@ -102,6 +111,8 @@ try {
 
   await page.click('#guidedSkip');
   assert.match(await page.$eval('#guidedTaskName', (node) => node.textContent), /Overall height/);
+  assert.equal(await page.$eval('svg [data-slot-key="p0:profile:height"]', (el) => el.classList.contains('is-active-dimension')), true);
+  assert.equal(await page.$eval('svg [data-slot-key="p0:profile:width"]', (el) => el.classList.contains('is-active-dimension')), false);
   assert.equal(await page.$eval('#guidedProgressFill', (node) => node.style.width), '0%');
   await page.click('#guidedPrevious');
 

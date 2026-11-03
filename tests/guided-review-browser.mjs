@@ -118,7 +118,7 @@ try {
     () => document.querySelector('.guided-current-step .dimension-title-row strong')?.textContent === 'Overall height',
     { timeout: 3000 },
   );
-  assert.equal(await page.$eval('#guidedProgressFill', (node) => node.style.width), (100 / 7) + '%');
+  assert.ok(Math.abs(parseFloat(await page.$eval('#guidedProgressFill', (node) => node.style.width)) - (100 / 7)) < 0.001, 'Progress is proportional to confirmed checks');
 
   await page.$eval('.guided-current-step .dimension-confirm', (button) => button.click());
   await page.waitForFunction(

@@ -86,10 +86,16 @@ body{background:#eef1f5}
   <section class="panel source-panel" id="sourcePanel" hidden>
     <div class="section-head"><div><p class="eyebrow">2 · Drawing</p><h1>Add your drawing</h1></div></div>
     <div class="capture-row">
-      <button class="button primary" type="button" id="demoManual">Enter drawing manually</button>
-      <label class="button file-button">Choose image<input id="demoUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      <label class="button primary file-button">Take photo<input id="demoCamera" type="file" accept="image/*" capture="environment" hidden></label>
+      <label class="button file-button">Upload drawing<input id="demoUpload" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+      <button class="button" type="button" id="demoManual">Enter drawing manually</button>
     </div>
-    <p class="demo-subtle">An image is used only as a visual reference. Automatic AI analysis is unavailable in this no-login walkthrough; enter its dimensions manually.</p>
+    <div id="capturedImagePanel" class="manual-panel" hidden>
+      <p class="demo-subtle" id="photoState" role="status"></p>
+      <img id="sourceImagePreview" alt="Your captured or uploaded drawing, stored only on this device" style="max-width:100%;max-height:300px;object-fit:contain;display:block;margin:auto;">
+      <button class="button quiet" type="button" id="removeImage">Remove photo</button>
+    </div>
+    <p class="demo-subtle">Photos stay on this device in this walkthrough. AI dimension reading is available only in the protected application; enter dimensions manually to try the new review screen.</p>
     <form id="manualForm" class="manual-panel" hidden>
       <h2>Panel measurements</h2>
       <div class="manual-fields">
@@ -171,7 +177,14 @@ function startMode(target,clear=false){
   }
   if(target==='saved')renderResults();
 }
-function clearImage(){if(imageObjectUrl)URL.revokeObjectURL(imageObjectUrl);imageObjectUrl=null;imageName='';$('drawingPreview').hidden=true;$('drawingPreview').removeAttribute('src');$('originalEmpty').hidden=false;}
+function clearImage(){
+ if(imageObjectUrl)URL.revokeObjectURL(imageObjectUrl);
+ imageObjectUrl=null;imageName='';
+ for(const id of ['drawingPreview','sourceImagePreview']){const img=$(id);img.removeAttribute('src');img.hidden=true}
+ $('originalEmpty').hidden=false;$('capturedImagePanel').hidden=true;
+ $('photoState').textContent='';
+ for(const id of ['demoCamera','demoUpload'])$(id).value='';
+}
 function jobData(){return {ref:$('jobRef').value.trim(),customer:$('customerName').value.trim(),staff:$('staffName').value.trim(),date:$('jobDate').value,dimensions:dims.map(x=>({...x})),updated:new Date().toISOString()}}
 function saveJob(){
   const job=jobData();
@@ -229,6 +242,7 @@ function manualCreate(event){
   }
   dims=dd;$('manualForm').hidden=true;
   renderReview();
+  if(imageObjectUrl)document.querySelector('[data-preview-choice="original"]')?.click();
   $('reviewPanel').scrollIntoView({block:'start'});
 }
 function manualError(message){$('manualError').hidden=false;$('manualError').textContent=message}
@@ -300,13 +314,24 @@ $('demoContinue').addEventListener('click',()=>{if(!validJob())return;$('sourceP
 $('demoManual').addEventListener('click',()=>{$('manualForm').hidden=false;$('manualForm').scrollIntoView({block:'start'})});
 $('hasCutout').addEventListener('change',optionalCutout);
 $('manualForm').addEventListener('submit',manualCreate);
-$('demoUpload').addEventListener('change',()=>{
- const file=$('demoUpload').files?.[0];if(!file)return;
- if(!/^image\/(png|jpeg|webp)$/.test(file.type)){$('originalEmpty').textContent='Select a JPG, PNG or WebP file.';return}
- clearImage();imageObjectUrl=URL.createObjectURL(file);imageName=file.name;$('drawingPreview').src=imageObjectUrl;
- $('drawingPreview').hidden=false;$('originalEmpty').hidden=true;
- $('manualForm').hidden=false;$('manualForm').scrollIntoView({block:'start'});
-});
+function useImage(input){
+ const file=input.files?.[0];if(!file)return;
+ if(!/^image\/(png|jpeg|webp)$/.test(file.type)){
+   $('photoState').textContent='Use a JPG, PNG or WebP image.';
+   $('capturedImagePanel').hidden=false;return;
+ }
+ clearImage();
+ imageObjectUrl=URL.createObjectURL(file);imageName=file.name;
+ for(const id of ['drawingPreview','sourceImagePreview']){$(id).src=imageObjectUrl;$(id).hidden=false}
+ $('originalEmpty').hidden=true;
+ $('photoState').textContent='Photo added: '+imageName+'. Enter its measurements below.';
+ $('capturedImagePanel').hidden=false;
+ $('manualForm').hidden=false;
+ $('capturedImagePanel').scrollIntoView({block:'nearest'});
+}
+$('demoCamera').addEventListener('change',()=>useImage($('demoCamera')));
+$('demoUpload').addEventListener('change',()=>useImage($('demoUpload')));
+$('removeImage').addEventListener('click',clearImage);
 }());
 </script>
 <script src="./guided-review.js"></script>

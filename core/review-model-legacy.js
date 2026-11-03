@@ -433,8 +433,14 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
   if (!(finitePositive(width) && finitePositive(height))) {
     chunks.push(`<rect x="${canvasX}" y="${canvasY}" width="${boxW}" height="${boxH}" fill="none" stroke="#98a2b3" stroke-width="2" stroke-dasharray="8 6"/>`);
     text(chunks, canvasX + boxW / 2, canvasY + boxH / 2, 'Confirm overall width and height to scale the drawing', 'text-anchor="middle" fill="#667085"');
-    if (finitePositive(width)) text(chunks, canvasX + boxW / 2, canvasY + boxH + 34, `${width} mm overall width ✓`, 'text-anchor="middle"');
-    if (finitePositive(height)) text(chunks, canvasX - 18, canvasY + boxH / 2, `${height} mm overall height ✓`, `text-anchor="middle" transform="rotate(-90 ${canvasX - 18} ${canvasY + boxH / 2})"`);
+    chunks.push(`<g data-slot-key="p${partIndex}:profile:width">`);
+    line(chunks, canvasX, canvasY + boxH + 23, canvasX + boxW, canvasY + boxH + 23);
+    text(chunks, canvasX + boxW / 2, canvasY + boxH + 34, finitePositive(width) ? `${width} mm overall width ✓` : 'Overall width — check original', 'text-anchor="middle"');
+    chunks.push('</g>');
+    chunks.push(`<g data-slot-key="p${partIndex}:profile:height">`);
+    line(chunks, canvasX - 18, canvasY, canvasX - 18, canvasY + boxH);
+    text(chunks, canvasX - 26, canvasY + boxH / 2, finitePositive(height) ? `${height} mm overall height ✓` : 'Overall height — check original', `text-anchor="middle" transform="rotate(-90 ${canvasX - 26} ${canvasY + boxH / 2})"`);
+    chunks.push('</g>');
     return;
   }
 
@@ -445,15 +451,18 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
   const oy = canvasY + (boxH - drawH) / 2;
   chunks.push(`<rect x="${ox}" y="${oy}" width="${drawW}" height="${drawH}" fill="#ffffff" stroke="#101828" stroke-width="2.2"/>`);
 
+  chunks.push(`<g data-slot-key="p${partIndex}:profile:width">`);
   line(chunks, ox, oy + drawH + 28, ox + drawW, oy + drawH + 28, true);
   line(chunks, ox, oy + drawH, ox, oy + drawH + 36);
   line(chunks, ox + drawW, oy + drawH, ox + drawW, oy + drawH + 36);
   text(chunks, ox + drawW / 2, oy + drawH + 23, `${width} mm`, 'text-anchor="middle" font-weight="700"');
-
+  chunks.push('</g>');
+  chunks.push(`<g data-slot-key="p${partIndex}:profile:height">`);
   line(chunks, ox - 35, oy, ox - 35, oy + drawH, true);
   line(chunks, ox - 42, oy, ox, oy);
   line(chunks, ox - 42, oy + drawH, ox, oy + drawH);
   text(chunks, ox - 42, oy + drawH / 2, `${height} mm`, `text-anchor="middle" font-weight="700" transform="rotate(-90 ${ox - 42} ${oy + drawH / 2})"`);
+  chunks.push('</g>');
 
   const featureBounds = new Map();
   for (const [featureIndex, feature] of (part.features || []).entries()) {
@@ -493,31 +502,41 @@ function drawRectanglePart(chunks, source, part, partIndex, yOffset, slots) {
     const cy = fy + fhp / 2;
 
     if (feature.type === 'circular_hole') {
+      chunks.push(`<g data-slot-key="p${partIndex}:f${featureIndex}:diameter">`);
       chunks.push(`<ellipse cx="${cx}" cy="${cy}" rx="${fwp / 2}" ry="${fhp / 2}" fill="none" stroke="#101828" stroke-width="1.8"/>`);
       line(chunks, cx - 8, cy, cx + 8, cy);
       line(chunks, cx, cy - 8, cx, cy + 8);
       text(chunks, cx, fy - 8, `${name} Ø${fw} mm`, 'text-anchor="middle" font-size="12" font-weight="700"');
+      chunks.push('</g>');
     } else {
       chunks.push(`<rect x="${fx}" y="${fy}" width="${fwp}" height="${fhp}" fill="none" stroke="#101828" stroke-width="1.8"/>`);
+      chunks.push(`<g data-slot-key="p${partIndex}:f${featureIndex}:width">`);
       line(chunks, fx, fy - 14, fx + fwp, fy - 14, true);
       text(chunks, cx, fy - 19, `${name} ${fw} mm`, 'text-anchor="middle" font-size="12" font-weight="700"');
+      chunks.push('</g>');
+      chunks.push(`<g data-slot-key="p${partIndex}:f${featureIndex}:height">`);
       line(chunks, fx + fwp + 14, fy, fx + fwp + 14, fy + fhp, true);
       text(chunks, fx + fwp + 22, cy, `${fh} mm`, `font-size="12" transform="rotate(-90 ${fx + fwp + 22} ${cy})" text-anchor="middle"`);
+      chunks.push('</g>');
     }
 
     const xTargetMm = xd.reference === 'centre' ? cxMm : xd.fromEdge === 'left' ? cxMm - fw / 2 : cxMm + fw / 2;
     const xTarget = ox + xTargetMm * scale;
     const xStart = previousBounds ? ox + previousBounds.maxX * scale : xd.fromEdge === 'left' ? ox : ox + drawW;
     const xDimY = Math.min(oy + drawH + 52 + featureIndex * 15, yOffset + 380);
+    chunks.push(`<g data-slot-key="p${partIndex}:f${featureIndex}:x">`);
     line(chunks, xStart, xDimY, xTarget, xDimY, true);
     text(chunks, (xStart + xTarget) / 2, xDimY - 6, previousBounds ? `${xd.valueMm} mm gap from previous cut-out` : `${xd.valueMm} mm ${xd.reference} from ${xd.fromEdge}`, 'text-anchor="middle" font-size="11"');
+    chunks.push('</g>');
 
     const yTargetMm = yd.reference === 'centre' ? cyMm : yd.fromEdge === 'bottom' ? cyMm - fh / 2 : cyMm + fh / 2;
     const yTarget = oy + drawH - yTargetMm * scale;
     const yStart = yd.fromEdge === 'top' ? oy : oy + drawH;
     const yDimX = ox + drawW + 58 + featureIndex * 14;
+    chunks.push(`<g data-slot-key="p${partIndex}:f${featureIndex}:y">`);
     line(chunks, yDimX, yStart, yDimX, yTarget, true);
     text(chunks, yDimX + 8, (yStart + yTarget) / 2, `${yd.valueMm} mm ${yd.reference} from ${yd.fromEdge}`, `font-size="11" transform="rotate(-90 ${yDimX + 8} ${(yStart + yTarget) / 2})" text-anchor="middle"`);
+    chunks.push('</g>');
   }
 }
 
@@ -528,6 +547,7 @@ function drawCirclePart(chunks, source, part, partIndex, yOffset, slots) {
   const cx = 450;
   const cy = yOffset + 190;
   const r = 125;
+  chunks.push(`<g data-slot-key="p${partIndex}:profile:diameter">`);
   chunks.push(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${finitePositive(diameter) ? '#101828' : '#98a2b3'}" stroke-width="2" ${finitePositive(diameter) ? '' : 'stroke-dasharray="8 6"'}/>`);
   if (finitePositive(diameter)) {
     line(chunks, cx - r, cy, cx + r, cy, true);
@@ -535,6 +555,7 @@ function drawCirclePart(chunks, source, part, partIndex, yOffset, slots) {
   } else {
     text(chunks, cx, cy, 'Confirm overall diameter to scale the drawing', 'text-anchor="middle" fill="#667085"');
   }
+  chunks.push('</g>');
 }
 
 function drawUnsupportedPart(chunks, source, part, partIndex, yOffset) {

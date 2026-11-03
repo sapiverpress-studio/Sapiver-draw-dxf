@@ -1,41 +1,56 @@
-# Guided dimension review — isolated UX development (2026-11-03)
+# Drawing Desk — Guided review integration (2026-11-03)
 
-Branch: `feature/guided-dimension-review-20261103`
-Base: `main` at ff9018c29bc6d06683ce3130db8e599e3eee3558
+## Objective
+Integrate the existing full Quick DXF application with the improved UX. The original
+camera upload, PDF/image upload, OpenAI drawing analysis, manual drawing,
+manufacturing settings, customer approval, signed release and DXF export must remain
+intact. The stand-alone no-login mock is *not* part of the application.
 
-## Explicit user requirements
-- Use **Edit**, not **Correct**, beside **Confirm** for each measurement.
-- Retain customer name, job reference, staff/date and saved-job search at the top of the page.
-- Make dimensions easier to verify without weakening the deterministic geometry safeguards.
-- Do not deploy to production without separate authorisation.
+## Operator workflow
+1. At the top select **New job** or **Saved job**.
+2. New job: enter reference, customer, staff/date; take a photograph, upload a
+   drawing/PDF, or enter a measured panel manually.
+3. Existing job: search by reference or customer and load the record.
+4. For a captured drawing, set glass thickness and toughening status, then run the
+   existing protected OpenAI analyser to identify perimeter dimensions, cut-outs,
+   holes and measurement relationships.
+5. Review one dimension at a time. **Confirm** accepts the interpreted measurement;
+   **Edit** lets the operator correct it. Previous/Next/Skip never automatically
+   confirm missing information.
+6. Final checks and signed release retain existing guards.
 
-## Implemented
-- A focused dimension review that displays one active measurement at a time, ordered from perimeter to cut-outs, then any process/finish confirmations.
-- A read-only measured value until the user selects **Edit**. Existing validation, confirmation and approval-invalidation handlers remain authoritative.
-- Previous/Next/Skip navigation; skipped items remain unconfirmed, so the existing manufacturing release gate stays closed.
-- View switch between **Original** and **DXF preview** instead of stacking two tall previews on mobile.
-- Progress bar and active-feature names with redundant old progress count hidden while the guided view is active.
-- Unassigned AI reads remain visible by default and can be collapsed; clarification warnings remain visible.
-- Existing job details, saved search, manual drawing, customer signature, revision locking, DXF output and share workflow remain untouched.
-- Controlled Netlify production packaging updated so a future authorised deploy includes the two new frontend files.
-- Browser regression fixture tests Edit, confirm/advance, switching views, preserved job header, saved search and feature navigation.
+## Deployment-sensitive data storage
+**Production** functions must keep reading the **same site-wide** Netlify Blobs
+store `quick-dxf-jobs` as before this UX change; do not migrate/delete existing
+jobs or signed files. **Deploy previews**, branch deploys and unknown contexts
+instead use a deploy-scoped store. The context comes from each Netlify function's
+`context.deploy.context`, passed through to the storage helper.
 
-## Deliberate limitations and follow-up
-- Highlighting the active measurement *on the CAD canvas* is not implemented: the current SVG renderer does not provide dependable element-to-dimension IDs for every case. Do not imply that the location is highlighted until a robust mapping is added.
-- This is a new frontend presentation layer over the existing card controls, not a change to the geometry engine.
-- Run a supervised Android UX test with a simple dimensioned rectangular panel and socket cut-out before merging.
-- Confirm that preview toggling, focus, zoom and any unlinked dimensions remain understandable on a real phone.
-- Do not merge or deploy without explicit instruction.
+Handlers requiring this context:
+- `netlify/functions/access.mjs`
+- `netlify/functions/jobs.mjs`
+- `netlify/functions/job-file.mjs`
+- `netlify/functions/analyse-drawing.mjs`
 
-## Validation
-The branch has a dedicated non-deploy GitHub Actions workflow:
-`Guided drawing review checks (no deploy)`.
-It runs JavaScript syntax checks, existing geometry/AI/review/PDF/release checks and a Chromium UI test using a synthetic job.
-No production DXF output or live external AI calls were exercised by that browser test.
+Each retains authentication. The OpenAI key is server-side; no unauthenticated AI
+request is permitted.
 
-## Preview deployment and isolation
-PR #2 creates the Netlify Deploy Preview at `https://deploy-preview-2--sapiver-draw-dxf.netlify.app`.
+## Verification
+- GitHub Actions: native analysis-integrity, deterministic geometry, curved profiles,
+  review-model, PDF, release and UI contract checks.
+- Chromium: guided dimension verification, editing, next/previous/skip and preserved
+  customer/job-search fields.
+- Production integration contract: protected AI endpoint and image/camera entry
+  remain in HTML and JS; production storage remains site-wide while previews
+  cannot read/write production blobs.
 
-**Critical preview-only change:** `netlify/functions/_quick-dxf-store.mjs` uses `getDeployStore` instead of production's `getStore`, isolating test customer/job data, signed proofs and uploaded files from the production Netlify Blobs store. Production `main` remains unchanged. The preview search intentionally starts empty, without the live historical jobs. **Before any future production merge, restore context-aware production storage behaviour; do not merge the preview-only store module as-is.**
-
-A small preview banner explains that old jobs are intentionally absent and that testers should use synthetic data.
+Limitations:
+- Automated regression passing does **not** prove live OpenAI recognition accuracy,
+  phone hardware camera activation, or factory machine compatibility.
+- The preview login has previously returned HTTP 503 when the deployment's auth
+  configuration was invalid. Netlify credentials need separate operational validation;
+  changing UX or merging code does not resolve the credentials.
+- A screenshot-level highlight linked to every confirmed dimension has not yet been
+  implemented; do not claim it is.
+- Production deployment must be verified independently after the merge. A commit on
+  GitHub `main` is not evidence of a successful Netlify production deployment.

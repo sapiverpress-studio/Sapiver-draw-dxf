@@ -119,3 +119,19 @@
 
 .preview-test-note { max-width:1280px; margin:14px auto 0; padding:8px 12px; color:#6a480e; font-size:.82rem; background:#fff9e8; border:1px solid #ead6a9; border-radius:9px; }
 @media(max-width:580px) { .preview-test-note { margin:8px 7px 0; } }
+
+/* Blank-first start: job choices precede either creation or saved-job lookup. */
+.mode-buttons { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:14px 0 0; }
+.mode-buttons .button { min-height:54px; font-size:1rem; font-weight:750; }
+.mode-buttons .button.selected { background:#18283f; color:#fff; border-color:#18283f; }
+#newJobWorkspace[hidden],#savedJobWorkspace[hidden] { display:none!important; }
+#newJobWorkspace,#savedJobWorkspace { margin-top:18px; }
+#newJobWorkspace .section-head { margin-bottom:14px; }
+#savedJobWorkspace .shared-jobs { padding-top:2px; border-top:none; }
+#savedJobWorkspace h2,#newJobWorkspace h2 { margin:0 0 14px; }
+#newJobWorkspace #saveState { margin:12px 0 0; }
+@media(max-width:580px) {
+  .mode-buttons .button { font-size:.98rem; }
+  #newJobWorkspace .section-head { display:block; }
+  #newJobWorkspace .section-actions { margin-top:10px; }
+}

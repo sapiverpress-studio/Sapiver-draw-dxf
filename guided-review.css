@@ -113,3 +113,6 @@
   .dimension-side.guided-enabled .guided-current-step .dimension-value-wrap input { font-size:1.5rem; }
   .preview-stack[data-active-preview] .drawing-preview-wrap { min-height:255px; }
 }
+
+/* The wizard is the only progress indicator while guided review is active. */
+.review-panel.guided-review-enabled #reviewProgress { display:none; }

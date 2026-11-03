@@ -1,0 +1,105 @@
+/* One real production workflow page at a time; no stacked five-section screen. */
+body:not([data-desk-step="drawing"]) .source-panel,
+body:not([data-desk-step="review"]) .review-panel,
+body:not([data-desk-step="approval"]) .approval-panel,
+body:not([data-desk-step="release"]) .release-panel,
+body:not([data-desk-step="start"]) .job-panel { display:none!important; }
+.desk-step-caption {
+  width:100%;
+  font-size:.77rem;
+  color:#475467;
+  font-weight:750;
+  margin:0 0 -2px;
+}
+.desk-error {
+  padding:10px 12px;
+  border:1px solid #fda29b;
+  background:#fef3f2;
+  color:#b42318;
+  border-radius:9px;
+  margin:12px 0 0;
+  font-size:.84rem;
+}
+.desk-error[hidden],.desk-next[hidden],#deskDrawingNext[hidden] { display:none!important; }
+.desk-next { width:100%;min-height:48px;margin-top:16px; }
+.desk-nav {
+  display:flex;
+  gap:12px;
+  justify-content:space-between;
+  margin-top:20px;
+  padding-top:15px;
+  border-top:1px solid #eaecf0;
+}
+.desk-nav>.button { min-height:48px; }
+.desk-nav>.button:last-child { flex:1; }
+.desk-analysis-mount { margin-top:16px; }
+.desk-analysis-mount .manufacturing-settings { margin-top:12px; }
+.desk-analysis-mount .analysis-row { margin:15px 0 8px; }
+.desk-analysis-mount .analysis-row #analyseBtn { min-height:48px;font-weight:750; }
+.desk-analysis-mount .ai-state { margin:0; }
+body[data-desk-step="review"] .review-layout { align-items:start; }
+body[data-desk-step="review"] .preview-stack { max-width:100%;min-width:0; }
+body[data-desk-step="review"] .drawing-preview-wrap { min-height:250px; }
+body[data-desk-step="review"] .guided-preview-tabs { margin-bottom:6px; }
+body[data-desk-step="start"] .job-panel > h1 { margin-bottom:12px; }
+body[data-desk-step="start"] .mode-buttons .button {
+  min-height:64px;
+  font-size:1.05rem;
+}
+.desk-review-hint {
+  font-size:.76rem;
+  color:#667085;
+  margin:0;
+}
+svg [data-slot-key] {
+  transition:stroke .15s ease,fill .15s ease;
+}
+svg [data-slot-key].is-active-dimension line,
+svg [data-slot-key].is-active-dimension path,
+svg [data-slot-key].is-active-dimension rect,
+svg [data-slot-key].is-active-dimension ellipse,
+svg [data-slot-key].is-active-dimension circle {
+  stroke:#bd741c!important;
+  stroke-width:4!important;
+}
+svg [data-slot-key].is-active-dimension text {
+  fill:#a85c0d!important;
+  font-weight:800!important;
+}
+@media(max-width:900px) {
+  body[data-desk-step="review"] .review-layout { display:flex;flex-direction:column;gap:12px; }
+  body[data-desk-step="review"] .review-layout > .preview-stack,
+  body[data-desk-step="review"] .review-layout > .dimension-side { width:100%; }
+  body[data-desk-step="review"] .preview-stack { order:0; }
+  body[data-desk-step="review"] .dimension-side { order:1; }
+  body[data-desk-step="review"] .drawing-preview-wrap {
+    height:250px;
+    min-height:250px!important;
+    overflow:auto;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  body[data-desk-step="review"] .geometry-svg-preview svg,
+  body[data-desk-step="review"] .drawing-preview-wrap img {
+    max-height:246px;
+    width:100%;
+    object-fit:contain;
+  }
+}
+@media(max-width:580px) {
+  .job-shell { gap:10px; }
+  .desk-step-caption { margin:0 4px -2px; }
+  body[data-desk-step="start"] .job-panel { min-height:210px; }
+  .desk-nav .button { min-width:0;padding:12px; }
+  body[data-desk-step="review"] .review-panel { padding:12px; }
+  body[data-desk-step="review"] .drawing-preview-wrap { height:210px;min-height:210px!important; }
+  body[data-desk-step="review"] .geometry-svg-preview svg,
+  body[data-desk-step="review"] .drawing-preview-wrap img { max-height:205px; }
+  body[data-desk-step="review"] .guided-review-header { margin-top:3px; }
+  body[data-desk-step="review"] .dimension-side .ai-state { margin-bottom:6px; }
+  .capture-row > .button,.capture-row > .file-button { flex:1 1 140px;justify-content:center;min-height:50px; }
+  .desk-analysis-mount .analysis-row { flex-direction:column;align-items:stretch; }
+  .desk-analysis-mount .analysis-row .ai-state { width:100%; }
+  .desk-analysis-mount .analysis-row #analyseBtn { width:100%; }
+}

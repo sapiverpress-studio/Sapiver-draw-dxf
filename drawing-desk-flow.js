@@ -43,7 +43,7 @@ function hasReviewData() {
 function reflectData() {
   const sources = [...sourceList.querySelectorAll('.source-card')];
   $('#deskDrawingNext').hidden = !hasReviewData();
-  const liveSourceKey = $('.source-card.active')?.textContent?.trim() || '';
+  const liveSourceKey = $('.source-card.active')?.dataset.sourceId || '';
   if (selectedSourceKey && selectedSourceKey !== liveSourceKey) {
     awaitingExtraction = false; awaitingManual = false;
   }

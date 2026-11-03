@@ -93,7 +93,7 @@ async function authFailure(error, rawApiKey, apiKey) {
   }, 502);
 }
 
-export default async (request) => {
+export default async (request, context) => {
   const denied = requireAuth(request, json);
   if (denied) return denied;
   if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
@@ -136,7 +136,7 @@ export default async (request) => {
   const fileId = safeFileId(body?.fileId);
   if (!jobId || !fileId) return json({ error: 'Invalid drawing reference.' }, 400);
 
-  const s = store();
+  const s = store(context);
   const key = resolveStoredFileKey(jobId, revision, fileId, body?.fileKey);
   const stream = await s.get(key, { type: 'stream' });
   if (!stream) return json({ error: 'Drawing file not found.' }, 404);

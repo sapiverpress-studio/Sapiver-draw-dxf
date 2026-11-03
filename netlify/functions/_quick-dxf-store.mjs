@@ -1,9 +1,12 @@
-import { getStore } from '@netlify/blobs';
+import { getDeployStore } from '@netlify/blobs';
 
 export const JOB_STORE = 'quick-dxf-jobs';
 
 export function store() {
-  return getStore({ name: JOB_STORE, consistency: 'strong' });
+  // PREVIEW ONLY: deploy-scoped storage prevents test jobs, file uploads and deletion
+  // from touching Halifax Glass production data. This change must not be
+  // merged into production without explicit production store routing.
+  return getDeployStore({ name: JOB_STORE, consistency: 'strong' });
 }
 
 export function json(value, status = 200) {

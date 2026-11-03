@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/guided-dimension-review-20261103
+      - main
   workflow_dispatch:
 
 permissions:
@@ -37,6 +38,8 @@ jobs:
           node tests/ui-contract.test.mjs
       - name: Install browser driver (no application deployment)
         run: npm install --no-save --ignore-scripts puppeteer-core@24
+      - name: Verify real AI analysis and context-isolated storage
+        run: node tests/production-integration.test.mjs
       - name: Chromium interaction checks
         run: |
           python3 -m http.server 4173 >/tmp/guided-review-http.log 2>&1 &

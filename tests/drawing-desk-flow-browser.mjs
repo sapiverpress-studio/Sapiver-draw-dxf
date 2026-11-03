@@ -6,6 +6,8 @@ const executablePath=['/usr/bin/google-chrome','/usr/bin/google-chrome-stable','
 if(!executablePath)throw new Error('Chromium unavailable');
 const browser=await puppeteer.launch({executablePath,headless:true,args:['--no-sandbox']});
 const page=await browser.newPage();
+page.setDefaultTimeout(7000);
+page.on('dialog', async dialog => { await dialog.accept(); });
 await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true});
 const errors=[];
 const requests=[];

@@ -41,4 +41,22 @@ assert.match(tabs, /jobModeSaved/, 'Saved job tab missing');
 assert.doesNotMatch(html, /ux-demo\.html/, 'Mock demonstration must not replace live app');
 assert.match(readFileSync('netlify/functions/analyse-drawing.mjs','utf8'),
   /requireAuth\(request, json\)/, 'AI API must remain protected');
+const flow = readFileSync('drawing-desk-flow.js', 'utf8');
+const flowCss = readFileSync('drawing-desk-flow.css', 'utf8');
+for (const element of ['deskNextDrawing','deskDrawingBack','deskReviewBack','deskReviewNext',
+  'deskApprovalBack','deskApprovalNext','deskReleaseBack','deskReturnHome',
+  'deskAnalysisMount']) {
+  assert.ok(html.includes('id="' + element + '"'), 'Missing stage control ' + element);
+}
+assert.match(html, /drawing-desk-flow\.js/, 'Wizard script not included');
+assert.match(html, /drawing-desk-flow\.css/, 'Wizard stylesheet not included');
+assert.match(flow, /append\(\$\('#manufacturingSettings'\), \$\('\.analysis-row'\)\)/,
+  'Actual AI analysis controls must be on the drawing screen');
+assert.match(flowCss, /data-desk-step="review"/);
+assert.match(readFileSync('core/review-model-legacy.js','utf8'), /data-slot-key/,
+  'Digital drawing must expose dimension highlight slots');
+assert.match(readFileSync('guided-review.js','utf8'), /is-active-dimension/,
+  'Dimension navigation must update the highlighted line');
+assert.doesNotMatch(readFileSync('app-v5-base.js','utf8'), /addManualCutoutRow\(\); els\.manualDrawingDialog\.showModal/,
+  'Manual drawing must start without a pre-added cut-out');
 console.log('Production integration contract: PASS');

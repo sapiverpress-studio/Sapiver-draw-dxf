@@ -118,7 +118,21 @@ try {
   await page.select('#toughenedGlass','no');
   await page.waitForFunction(()=>!document.querySelector('#analyseBtn').disabled,{timeout:5000});
   await page.click('#analyseBtn');
-  await page.waitForFunction(()=>document.body.dataset.deskStep==='review',{timeout:10000});
+  try {
+    await page.waitForFunction(()=>document.body.dataset.deskStep==='review',{timeout:10000});
+  } catch (error) {
+    console.error('Analysis transition debug:', JSON.stringify(await page.evaluate(() => ({
+      step:document.body.dataset.deskStep,
+      ai:document.querySelector('#aiState')?.textContent,
+      source:document.querySelector('#sourceStrip')?.textContent,
+      review:document.querySelector('#dimensionList')?.textContent.slice(0,600),
+      analyseDisabled:document.querySelector('#analyseBtn')?.disabled,
+      settings:document.querySelector('#manufacturingSettingsMessage')?.textContent,
+    }))));
+    console.error('Backend request log:',JSON.stringify(requests));
+    console.error('Browser errors:',JSON.stringify(errors));
+    throw error;
+  }
   assert.ok(requests.some(x=>x.url.includes('/analyse-drawing')),'AI route was not called');
   assert.equal(await page.$eval('svg [data-slot-key="p0:profile:width"]',el=>el.classList.contains('is-active-dimension')),true);
   assert.equal(await page.$eval('#guidedTaskName',el=>el.textContent.includes('Overall width')),true);

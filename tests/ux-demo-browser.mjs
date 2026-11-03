@@ -41,6 +41,34 @@ try{
   assert.equal(await page.$eval('#reviewPanel',el=>el.hidden),true);
   await page.click('#demoContinue');
   assert.equal(await page.$eval('#sourcePanel',el=>el.hidden),false);
+  assert.equal(await page.$eval('#demoCamera',el=>el.getAttribute('capture')),'environment');
+  assert.equal(await page.$eval('#demoCamera',el=>el.getAttribute('accept')),'image/*');
+  const tinyPng='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+3AiwAAAAASUVORK5CYII=';
+  await page.evaluate((base64)=>{
+    const bin=atob(base64);
+    const data=Uint8Array.from(bin,c=>c.charCodeAt(0));
+    const photo=new File([data],'camera-photo.png',{type:'image/png'});
+    const transfer=new DataTransfer();
+    transfer.items.add(photo);
+    const input=document.querySelector('#demoCamera');
+    input.files=transfer.files;
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+  },tinyPng);
+  assert.equal(await page.$eval('#capturedImagePanel',el=>el.hidden),false);
+  assert.match(await page.$eval('#photoState',el=>el.textContent),/camera-photo.png/);
+  assert.equal(await page.$eval('#sourceImagePreview',el=>el.src.startsWith('blob:')),true);
+  await page.click('#removeImage');
+  assert.equal(await page.$eval('#capturedImagePanel',el=>el.hidden),true);
+  // The alternative image upload must also show a local original.
+  await page.evaluate((base64)=>{
+    const bin=atob(base64);const data=Uint8Array.from(bin,c=>c.charCodeAt(0));
+    const file=new File([data],'drawing.png',{type:'image/png'});
+    const transfer=new DataTransfer();transfer.items.add(file);
+    const input=document.querySelector('#demoUpload');input.files=transfer.files;
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+  },tinyPng);
+  assert.equal(await page.$eval('#capturedImagePanel',el=>el.hidden),false);
+  assert.match(await page.$eval('#photoState',el=>el.textContent),/drawing.png/);
   await page.click('#demoManual');
   assert.equal(await page.$eval('#manualForm',el=>el.hidden),false);
   await page.type('#manualWidth','1200');
@@ -55,6 +83,8 @@ try{
   assert.equal(await page.$eval('#reviewPanel',el=>el.hidden),false);
   assert.equal(await page.$eval('#guidedTaskName',el=>el.textContent.includes('Overall width')),true);
   assert.equal(await page.$eval('#geometryPreview',el=>el.textContent.includes('1200 × 700 mm')),true);
+  assert.equal(await page.$eval('.preview-stack',el=>el.dataset.activePreview),'original','Photo should be visible by default after dimensions are entered');
+  assert.equal(await page.$eval('#drawingPreview',el=>!el.hidden && el.src.startsWith('blob:')),true);
   await page.click('[data-preview-choice="original"]');
   assert.equal(await page.$eval('.preview-stack',el=>el.dataset.activePreview),'original');
   await page.click('[data-preview-choice="dxf"]');

@@ -124,7 +124,9 @@ function initialise() {
   // Only an explicit Analyse click transitions into an AI-driven review. Never
   // auto-approve, or advance merely because a file upload has completed.
   analyse.addEventListener('click', () => {
-    if (!analyse.disabled) awaitingExtraction = true;
+    // The core app marks the button disabled immediately on a valid click,
+    // before this listener runs. The click itself proves it was enabled.
+    awaitingExtraction = true;
   });
   $('#manualDrawingForm').addEventListener('submit', () => {
     awaitingManual = true;

@@ -116,3 +116,6 @@
 
 /* The wizard is the only progress indicator while guided review is active. */
 .review-panel.guided-review-enabled #reviewProgress { display:none; }
+
+.preview-test-note { max-width:1280px; margin:14px auto 0; padding:8px 12px; color:#6a480e; font-size:.82rem; background:#fff9e8; border:1px solid #ead6a9; border-radius:9px; }
+@media(max-width:580px) { .preview-test-note { margin:8px 7px 0; } }

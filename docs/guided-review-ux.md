@@ -32,3 +32,10 @@ The branch has a dedicated non-deploy GitHub Actions workflow:
 `Guided drawing review checks (no deploy)`.
 It runs JavaScript syntax checks, existing geometry/AI/review/PDF/release checks and a Chromium UI test using a synthetic job.
 No production DXF output or live external AI calls were exercised by that browser test.
+
+## Preview deployment and isolation
+PR #2 creates the Netlify Deploy Preview at `https://deploy-preview-2--sapiver-draw-dxf.netlify.app`.
+
+**Critical preview-only change:** `netlify/functions/_quick-dxf-store.mjs` uses `getDeployStore` instead of production's `getStore`, isolating test customer/job data, signed proofs and uploaded files from the production Netlify Blobs store. Production `main` remains unchanged. The preview search intentionally starts empty, without the live historical jobs. **Before any future production merge, restore context-aware production storage behaviour; do not merge the preview-only store module as-is.**
+
+A small preview banner explains that old jobs are intentionally absent and that testers should use synthetic data.
